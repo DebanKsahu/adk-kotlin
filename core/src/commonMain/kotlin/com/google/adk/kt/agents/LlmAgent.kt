@@ -1,0 +1,265 @@
+/*
+ * Copyright 2026 Google LLC
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package com.google.adk.kt.agents
+
+import com.google.adk.kt.callbacks.AfterAgentCallback
+import com.google.adk.kt.callbacks.AfterModelCallback
+import com.google.adk.kt.callbacks.AfterToolCallback
+import com.google.adk.kt.callbacks.BeforeAgentCallback
+import com.google.adk.kt.callbacks.BeforeModelCallback
+import com.google.adk.kt.callbacks.BeforeToolCallback
+import com.google.adk.kt.callbacks.OnModelErrorCallback
+import com.google.adk.kt.callbacks.OnToolErrorCallback
+import com.google.adk.kt.events.Event
+import com.google.adk.kt.models.Model
+import com.google.adk.kt.processors.AgentTransferProcessor
+import com.google.adk.kt.processors.BasicRequestProcessor
+import com.google.adk.kt.processors.ContentsProcessor
+import com.google.adk.kt.processors.InstructionsProcessor
+import com.google.adk.kt.processors.LlmRequestProcessor
+import com.google.adk.kt.processors.LlmResponseProcessor
+import com.google.adk.kt.processors.RequestConfirmationProcessor
+import com.google.adk.kt.tools.BaseTool
+import com.google.adk.kt.tools.Toolset
+import com.google.adk.kt.types.Content
+import com.google.adk.kt.types.GenerateContentConfig
+import com.google.adk.kt.types.Role
+import com.google.adk.kt.types.Schema
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
+
+/**
+ * LLM-based Agent.
+ *
+ * When this agent is a sub-agent and the parent transfers control to it via `transfer_to_agent`,
+ * the runner decides who handles the *next* user turn based on the [disallowTransferToParent] /
+ * [disallowTransferToPeers] flags inherited from `BaseAgent` - see those flags for the full
+ * dispatch rules.
+ *
+ * @property model The model to use for the agent.
+ * @property tools Tools available to this agent.
+ * @property toolsets Toolsets available to this agent.
+ * @property generateContentConfig The additional content generation configurations.
+ * @property instruction Instruction guiding the agent's behavior. Use one of:
+ *     - `Instruction("text")` for a literal string (the most common case),
+ *     - `Instruction(content)` for a pre-built, possibly multimodal [Content], or
+ *     - `Instruction { ctx -> ... }` for a [Instruction.Provider] resolved per turn.
+ *
+ * For convenience, the resolved instruction can contain placeholders like `{variable_name}` that
+ * will be resolved at runtime using session state and context.
+ *
+ * **Behavior depends on [staticInstruction]:**
+ * - If [staticInstruction] is null: this instruction is appended to the LLM's system instruction.
+ * - If [staticInstruction] is set: this instruction is added as user content in the request (after
+ *   the static system instruction).
+ *
+ * This allows for context caching optimization where static content ([staticInstruction]) comes
+ * first in the prompt, followed by dynamic content ([instruction]).
+ *
+ * @property staticInstruction Static instruction content sent literally as system instruction at
+ *   the beginning. This field is for content that never changes. It's sent directly to the model
+ *   without any processing or variable substitution.
+ *
+ * This field is primarily for context caching optimization. Static instructions are sent as system
+ * instruction at the beginning of the request, allowing for improved performance when the static
+ * portion remains unchanged.
+ *
+ * **Impact on [instruction] field:**
+ * - When staticInstruction is null: [instruction] -> LLM's system instruction
+ * - When staticInstruction is set: [instruction] -> user content (after static content)
+ *
+ * **Context Caching:** Setting staticInstruction alone does NOT enable caching automatically. For
+ * explicit caching control, configure context_cache_config.
+ *
+ * @property beforeModelCallbacks List of callbacks to run before each model call.
+ * @property afterModelCallbacks List of callbacks to run after each model call.
+ * @property beforeToolCallbacks List of callbacks to run before each tool call.
+ * @property afterToolCallbacks List of callbacks to run after each tool call.
+ * @property inputSchema The input schema of the agent.
+ * @property onModelErrorCallbacks List of callbacks to run when a model call fails.
+ * @property onToolErrorCallbacks List of callbacks to run when a tool call fails.
+ * @property includeContents Controls how prior conversation history is included in the model
+ *   request. Defaults to [IncludeContents.DEFAULT], which includes the relevant conversation
+ *   history. Set to [IncludeContents.NONE] to exclude prior history; the model then receives only
+ *   the current turn (the most recent user input or other-agent reply, plus any tool
+ *   calls/responses produced within that turn). The system instruction and tools are preserved in
+ *   both modes.
+ */
+class LlmAgent(
+  name: String,
+  val model: Model,
+  description: String = "",
+  subAgents: List<BaseAgent> = emptyList(),
+  beforeAgentCallbacks: List<BeforeAgentCallback> = emptyList(),
+  afterAgentCallbacks: List<AfterAgentCallback> = emptyList(),
+  disallowTransferToParent: Boolean = false,
+  disallowTransferToPeers: Boolean = false,
+  val tools: List<BaseTool> = emptyList(),
+  val toolsets: List<Toolset> = emptyList(),
+  val generateContentConfig: GenerateContentConfig? = null,
+  val instruction: Instruction? = null,
+  val staticInstruction: Content? = null,
+  val beforeModelCallbacks: List<BeforeModelCallback> = emptyList(),
+  val afterModelCallbacks: List<AfterModelCallback> = emptyList(),
+  val beforeToolCallbacks: List<BeforeToolCallback> = emptyList(),
+  val afterToolCallbacks: List<AfterToolCallback> = emptyList(),
+  val inputSchema: Schema? = null,
+  val onModelErrorCallbacks: List<OnModelErrorCallback> = emptyList(),
+  val onToolErrorCallbacks: List<OnToolErrorCallback> = emptyList(),
+  val includeContents: IncludeContents = IncludeContents.DEFAULT,
+) :
+  BaseAgent(
+    name = name,
+    description = description,
+    subAgents = subAgents,
+    beforeAgentCallbacks = beforeAgentCallbacks,
+    afterAgentCallbacks = afterAgentCallbacks,
+    disallowTransferToParent = disallowTransferToParent,
+    disallowTransferToPeers = disallowTransferToPeers,
+  ) {
+
+  /**
+   * Controls how prior conversation history is included in this agent's model request.
+   *
+   * Mirrors the Python ADK `LlmAgent.include_contents` field (`Literal['default', 'none']`).
+   *
+   * Note: This setting only affects the `contents` portion of the model request. The system
+   * instruction (managed by the instructions processor) and the available tools (managed by the
+   * basic request processor) are preserved in both modes.
+   */
+  enum class IncludeContents {
+    /** The model receives the relevant conversation history. */
+    DEFAULT,
+
+    /**
+     * The model receives no prior history and operates solely on the current turn.
+     *
+     * The "current turn" starts at the most recent user input or, in multi-agent setups, at the
+     * most recent reply from another agent. Tool calls and responses produced within the current
+     * turn are still included.
+     */
+    NONE,
+  }
+
+  internal val systemBeforeTurnProcessors: List<LlmRequestProcessor> =
+    listOf(
+      BasicRequestProcessor(),
+      RequestConfirmationProcessor(),
+      InstructionsProcessor(),
+      ContentsProcessor(),
+      AgentTransferProcessor(),
+    )
+
+  internal val systemAfterTurnProcessors: List<LlmResponseProcessor> = emptyList()
+
+  private fun getTransferToAgentOrNull(event: Event, fromAgent: String): BaseAgent? {
+    if (event.author == fromAgent) {
+      val transferTo = event.actions.transferToAgent
+      if (transferTo != null && transferTo != fromAgent) {
+        return findAgent(transferTo)
+      }
+    }
+    return null
+  }
+
+  private suspend fun getSubagentToResume(context: InvocationContext): BaseAgent? {
+    val events = context.getEvents(currentInvocation = true, currentBranch = true)
+    if (events.isEmpty()) return null
+
+    val lastEvent = events.last()
+    if (lastEvent.author == name) {
+      return getTransferToAgentOrNull(lastEvent, name)
+    }
+
+    if (lastEvent.author == Role.USER) {
+      val functionCallEvent = context.findMatchingFunctionCall(lastEvent)
+      if (functionCallEvent == null) {
+        throw IllegalArgumentException(
+          "No agent to transfer to for resuming agent from function response $name"
+        )
+      }
+      if (functionCallEvent.author == name) {
+        return null
+      }
+    }
+
+    for (event in events.asReversed().asSequence().drop(1)) {
+      val agent = getTransferToAgentOrNull(event, name)
+      if (agent != null) {
+        return agent
+      }
+    }
+
+    return null
+  }
+
+  override fun runAsyncImpl(context: InvocationContext): Flow<Event> = flow {
+    val agentState = context.agentStates[name]
+
+    if (agentState != null) {
+      val agentToTransfer = getSubagentToResume(context)
+      if (agentToTransfer != null) {
+        agentToTransfer.runAsync(context).collect { emit(it) }
+        context.setAgentState(name, endOfAgent = true)
+        emitEndOfAgent(context)
+        return@flow
+      }
+    }
+
+    executeTurns(context).collect { emit(it) }
+
+    if (context.isResumable && !context.isPaused && context.agent == this@LlmAgent) {
+      context.setAgentState(name, endOfAgent = true)
+      emitEndOfAgent(context)
+    }
+  }
+
+  private fun executeTurns(context: InvocationContext): Flow<Event> = flow {
+    var lastEvent: Event?
+    do {
+      lastEvent = null
+      LlmAgentTurn(this@LlmAgent, context, systemBeforeTurnProcessors, systemAfterTurnProcessors)
+        .execute()
+        .collect { event ->
+          lastEvent = event
+          emit(event)
+        }
+    } while (!context.isEndOfInvocation && !context.isPaused && lastEvent?.isFinalResponse == false)
+  }
+
+  /** Materializes the [instruction] for the current turn. */
+  internal suspend fun canonicalInstruction(context: ReadonlyContext): Content? =
+    instruction?.resolve(context)
+}
+
+/** Ensures InvocationContext.agent is LlmAgent instance, throws exception otherwise. */
+internal fun InvocationContext.requireLlmAgent(): LlmAgent {
+  val agent = this.agent
+  require(agent is LlmAgent) {
+    "Expected agent to be an LlmAgent, but got ${agent::class.simpleName}"
+  }
+  return agent
+}
+
+/** Ensures CallbackContext.agent is LlmAgent instance. */
+internal fun CallbackContext.requireLlmAgent(): LlmAgent {
+  val agent = this.agent
+  require(agent is LlmAgent) {
+    "Expected agent to be an LlmAgent, but got ${agent::class.simpleName}"
+  }
+  return agent
+}

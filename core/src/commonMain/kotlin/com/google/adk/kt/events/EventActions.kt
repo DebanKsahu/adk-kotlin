@@ -1,0 +1,92 @@
+/*
+ * Copyright 2026 Google LLC
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package com.google.adk.kt.events
+
+import com.google.adk.kt.agents.TypedData
+import com.google.adk.kt.collections.concurrentMutableMapOf
+import com.google.adk.kt.sessions.State
+
+/**
+ * Represents the actions attached to an event.
+ *
+ * @property skipSummarization If true, it won't call the model to summarize the function response.
+ *   Only used for a function response event.
+ * @property stateDelta Indicates that the event is updating the state with the given delta.
+ * @property artifactDelta Indicates that the event is updating an artifact. The key is the
+ *   filename, and the value is the version.
+ * @property transferToAgent If set, the event transfers to the specified agent.
+ * @property escalate The agent is escalating to a higher level agent.
+ * @property endOfAgent If true, the current agent has finished its current run. Note that there can
+ *   be multiple events with [endOfAgent] set to `true` for the same agent within one invocation
+ *   when there is a loop. This should only be set by the ADK workflow.
+ * @property requestedToolConfirmations A map of tool confirmations requested by this event, keyed
+ *   by function call ID.
+ * @property rewindBeforeInvocationId If set, the agent will rewind history before the specified
+ *   invocation ID.
+ * @property agentState The state of the agent for resumability.
+ */
+data class EventActions(
+  var skipSummarization: Boolean = false,
+  val stateDelta: MutableMap<String, Any> = concurrentMutableMapOf(),
+  val artifactDelta: MutableMap<String, Int> = concurrentMutableMapOf(),
+  var transferToAgent: String? = null,
+  var escalate: Boolean = false,
+  var endOfAgent: Boolean = false,
+  val requestedToolConfirmations: MutableMap<String, ToolConfirmation> = concurrentMutableMapOf(),
+  var rewindBeforeInvocationId: String? = null,
+  var agentState: TypedData? = null,
+) {
+  /**
+   * Removes a key from the state delta.
+   *
+   * @param key The key to remove.
+   */
+  fun removeStateByKey(key: String) {
+    stateDelta[key] = State.REMOVED
+  }
+
+  /**
+   * Merges this [EventActions] with another one.
+   *
+   * @param other The other [EventActions] to merge with.
+   * @return A new [EventActions] object containing the merged results.
+   */
+  fun mergeWith(other: EventActions): EventActions =
+    copy(
+      skipSummarization = this.skipSummarization || other.skipSummarization,
+      stateDelta =
+        concurrentMutableMapOf<String, Any>().apply {
+          putAll(this@EventActions.stateDelta)
+          putAll(other.stateDelta)
+        },
+      artifactDelta =
+        concurrentMutableMapOf<String, Int>().apply {
+          putAll(this@EventActions.artifactDelta)
+          putAll(other.artifactDelta)
+        },
+      transferToAgent = other.transferToAgent ?: this.transferToAgent,
+      escalate = this.escalate || other.escalate,
+      endOfAgent = this.endOfAgent || other.endOfAgent,
+      requestedToolConfirmations =
+        concurrentMutableMapOf<String, ToolConfirmation>().apply {
+          putAll(this@EventActions.requestedToolConfirmations)
+          putAll(other.requestedToolConfirmations)
+        },
+      rewindBeforeInvocationId = other.rewindBeforeInvocationId ?: this.rewindBeforeInvocationId,
+      agentState = other.agentState ?: this.agentState,
+    )
+}
