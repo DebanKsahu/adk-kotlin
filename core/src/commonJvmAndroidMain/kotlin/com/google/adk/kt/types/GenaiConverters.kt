@@ -333,7 +333,7 @@ internal fun com.google.genai.types.GoogleSearch.fromGenaiSdk(): GoogleSearch =
 /** Converts an ADK [GoogleSearch] to a [com.google.genai.types.GoogleSearch] for the GenAI SDK. */
 internal fun GoogleSearch.toGenaiSdk(): com.google.genai.types.GoogleSearch =
   com.google.genai.types.GoogleSearch.builder()
-    .apply { excludeDomains(this@toGenaiSdk.excludeDomains) }
+    .apply { this@toGenaiSdk.excludeDomains.takeIf { it.isNotEmpty() }?.let { excludeDomains(it) } }
     .build()
 
 // --- Schema ---

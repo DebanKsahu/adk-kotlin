@@ -306,6 +306,14 @@ class GenaiConvertersTest {
   }
 
   @Test
+  fun googleSearch_withExcludeDomains_convertsCorrectly() {
+    val adkGoogleSearch = GoogleSearch(excludeDomains = listOf("example.com", "test.org"))
+    val genaiGoogleSearch = adkGoogleSearch.toGenaiSdk()
+    val convertedBack = genaiGoogleSearch.fromGenaiSdk()
+    assertEquals(adkGoogleSearch, convertedBack)
+  }
+
+  @Test
   fun googleMaps_convertsCorrectly() {
     val adkGoogleMaps = GoogleMaps(enableWidget = true)
     val genaiGoogleMaps = adkGoogleMaps.toGenaiSdk()
