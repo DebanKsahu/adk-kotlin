@@ -1,0 +1,68 @@
+# Builds and tests the Kotlin ADK with Gradle on the supported JDKs.
+name: validation
+
+on:
+  pull_request:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-modules:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      matrix:
+        java-version: ["17", "21"]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Java ${{ matrix.java-version }}
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java-version }}
+
+      # The project contains `com.android.library` subprojects (see root
+      # build.gradle.kts), so the Android SDK must be available on the runner
+      # for Gradle to resolve `compileSdk` / `minSdk`. `ubuntu-latest` does not
+      # ship the SDK in a location AGP can find, so we install it explicitly.
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          # Keep these in sync with the values in build.gradle.kts
+          # (androidCompileSdk / androidMinSdk).
+          packages: "platforms;android-34 build-tools;34.0.0"
+
+      - name: Cache Gradle packages
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ matrix.java-version }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', 'gradle/libs.versions.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-${{ matrix.java-version }}-
+            ${{ runner.os }}-gradle-
+
+      - name: Build and test (Java ${{ matrix.java-version }})
+        # `gradle.properties` is tuned for local/corp dev machines and sets
+        # heap sizes (Xmx16g for Gradle, Xmx32g for the Kotlin daemon) that
+        # exceed the ~16 GB available on GitHub-hosted `ubuntu-latest` runners.
+        # We override them here so CI does not OOM at daemon startup.
+        env:
+          GRADLE_OPTS: "-Xmx4g -XX:MaxMetaspaceSize=1g -Dorg.gradle.daemon=false"
+        run: |
+          ./gradlew \
+            -Pkotlin.daemon.jvmargs="-Xmx4g" \
+            --no-daemon \
+            --stacktrace \
+            build
+
+      - name: Detect wrongly formatted files
+        run: git status && git diff --exit-code
