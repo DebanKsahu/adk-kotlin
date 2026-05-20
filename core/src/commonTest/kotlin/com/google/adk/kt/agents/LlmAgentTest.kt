@@ -334,6 +334,67 @@ class LlmAgentTest {
     assertEquals("test-agent", events[1].author)
   }
 
+  /**
+   * On a resumable invocation that paused on a long-running tool call, no event with
+   * `actions.endOfAgent = true` is emitted -- the agent state stays live so a follow-up call can
+   * resume it. The gate inspects the last two events of the current invocation/branch and skips
+   * `endOfAgent` emission when any of them satisfies `shouldPauseInvocation`. Mirrors Python ADK
+   * `agents/llm_agent.py:498-505`.
+   */
+  @Test
+  fun runAsync_resumableContext_longRunningPause_suppressesEndOfAgent() = runTest {
+    val callId = "long-running-call-id"
+    val agent =
+      LlmAgent(
+        name = "test-agent",
+        model = DummyModel.createSequential("test-model", listOf(LlmResponse())),
+        tools = listOf(DummyTool(name = "do_work", isLongRunning = true, onRun = { _, _ -> Unit })),
+      )
+    val sessionService = InMemorySessionService()
+    val session = sessionService.createSession(SessionKey("app", "user", "test-session"))
+    val invocationId = "test-invocation"
+    val context =
+      InvocationContext(
+        agent = agent,
+        session = session,
+        runConfig = null,
+        resumabilityConfig = ResumabilityConfig(isResumable = true),
+        invocationId = invocationId,
+      )
+    // Pre-populate the session with a user message and a long-running function-call event from a
+    // prior turn -- this is what the runner would have written before re-entering `runAsyncImpl`.
+    session.events.add(
+      Event(
+        id = Uuid.random(),
+        invocationId = invocationId,
+        author = "user",
+        branch = context.branch,
+        content = Content(role = Role.USER, parts = listOf(Part(text = "start"))),
+      )
+    )
+    session.events.add(
+      Event(
+        id = Uuid.random(),
+        invocationId = invocationId,
+        author = "test-agent",
+        branch = context.branch,
+        content =
+          Content(
+            role = Role.MODEL,
+            parts = listOf(Part(functionCall = FunctionCall(name = "do_work", id = callId))),
+          ),
+        longRunningToolIds = setOf(callId),
+      )
+    )
+
+    val events = agent.runAsync(context).toList()
+
+    assertTrue(
+      "endOfAgent must be suppressed when the invocation is paused on a long-running call",
+      events.none { it.actions.endOfAgent },
+    )
+  }
+
   private fun createEvent(author: String, text: String): Event {
     return Event(
       id = Uuid.random(),

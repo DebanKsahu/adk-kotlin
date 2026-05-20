@@ -142,15 +142,55 @@ abstract class AbstractRunner(
         throw IllegalArgumentException("No new message provided and session is not resumable")
       }
       return setupContextForNewInvocation(session, invocationId, newMessage, runConfig, stateDelta)
-    } else {
-      return setupContextForResumedInvocation(
-        session,
-        newMessage,
-        invocationId,
-        runConfig,
-        stateDelta,
-      )
     }
+    // Resumable mode: pick the existing invocation to resume if we can. If `newMessage` is a
+    // `FunctionResponse`, look up the originating function-call event in session history and
+    // resume its invocation. Otherwise fall back to the caller-supplied `invocationId`. If
+    // neither resolves, treat this as a brand-new invocation. Mirrors Python ADK
+    // `runners.py:_resolve_invocation_id`.
+    val resolvedInvocationId = resolveInvocationId(session, newMessage, invocationId)
+    if (resolvedInvocationId == null) {
+      if (newMessage == null) {
+        throw IllegalArgumentException(
+          "No new message provided and no resumable invocation to resume"
+        )
+      }
+      return setupContextForNewInvocation(session, invocationId, newMessage, runConfig, stateDelta)
+    }
+    return setupContextForResumedInvocation(
+      session,
+      newMessage,
+      resolvedInvocationId,
+      runConfig,
+      stateDelta,
+    )
+  }
+
+  /**
+   * Resolves the invocation ID for a resumable runner call.
+   *
+   * - If [newMessage] carries a `FunctionResponse`, find the matching `FunctionCall` event in the
+   *   session and return its `invocationId` (the response resumes that invocation).
+   * - Otherwise return [invocationId] (which is typically `null` for a first-time call).
+   *
+   * Mirrors Python ADK `runners.py:_resolve_invocation_id`.
+   */
+  private fun resolveInvocationId(
+    session: Session,
+    newMessage: Content?,
+    invocationId: String?,
+  ): String? {
+    val functionResponse =
+      newMessage?.parts?.firstNotNullOfOrNull { it.functionResponse } ?: return invocationId
+    val targetId = functionResponse.id ?: return invocationId
+    val fcEvent =
+      session.events.asReversed().firstOrNull { event ->
+        event.functionCalls().any { it.id == targetId }
+      }
+        ?: throw IllegalArgumentException(
+          "Function call event not found for function response id: $targetId"
+        )
+    return fcEvent.invocationId
   }
 
   /**

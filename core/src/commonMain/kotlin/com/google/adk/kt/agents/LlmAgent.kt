@@ -220,9 +220,25 @@ class LlmAgent(
       }
     }
 
-    executeTurns(context).collect { emit(it) }
+    // On a resumable invocation that paused on a long-running tool call, do not emit the
+    // end-of-agent marker so a follow-up `runAsync(newMessage = userFunctionResponse(...))` can
+    // resume the same agent. We detect a pause both per-event (during `executeTurns`) and, as a
+    // backstop, from the session's last two events afterwards. Mirrors Python ADK
+    // `agents/llm_agent.py:486-505`.
+    var shouldPause = false
+    executeTurns(context).collect { event ->
+      emit(event)
+      if (context.shouldPauseInvocation(event)) {
+        shouldPause = true
+      }
+    }
+    if (shouldPause) return@flow
 
-    if (context.isResumable && !context.isPaused && context.agent == this@LlmAgent) {
+    if (context.isResumable && context.agent == this@LlmAgent) {
+      val events = context.getEvents(currentInvocation = true, currentBranch = true)
+      if (events.takeLast(2).any { context.shouldPauseInvocation(it) }) {
+        return@flow
+      }
       context.setAgentState(name, endOfAgent = true)
       emitEndOfAgent(context)
     }
@@ -238,7 +254,7 @@ class LlmAgent(
           lastEvent = event
           emit(event)
         }
-    } while (!context.isEndOfInvocation && !context.isPaused && lastEvent?.isFinalResponse == false)
+    } while (!context.isEndOfInvocation && lastEvent?.isFinalResponse == false)
   }
 
   /** Materializes the [instruction] for the current turn. */

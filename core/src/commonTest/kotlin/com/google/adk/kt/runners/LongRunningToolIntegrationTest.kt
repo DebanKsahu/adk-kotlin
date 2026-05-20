@@ -13,9 +13,13 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+@file:OptIn(ExperimentalResumabilityFeature::class)
+
 package com.google.adk.kt.runners
 
 import com.google.adk.kt.agents.LlmAgent
+import com.google.adk.kt.agents.ResumabilityConfig
+import com.google.adk.kt.annotations.ExperimentalResumabilityFeature
 import com.google.adk.kt.models.LlmRequest
 import com.google.adk.kt.testing.DummyModel
 import com.google.adk.kt.testing.DummyTool
@@ -56,84 +60,35 @@ import kotlinx.coroutines.test.runTest
  */
 class LongRunningToolIntegrationTest {
 
-  /**
-   * A long-running tool returning a plain dict propagates that dict as the function-response
-   * payload; the model is then re-invoked once with the placeholder in history and acknowledges.
-   * Across the turn, the model is invoked twice and the tool is invoked once. Matches Python ADK
-   * behaviour for non-falsy tool responses.
-   */
-  @Test
-  fun runAsync_longRunningToolReturnsDict_propagatesPayloadAndAcknowledges() = runTest {
-    val callId = "lr_call_dict"
-    val payload = mapOf("status" to "pending")
-    var modelInvocations = 0
-    var toolInvocations = 0
-    val agent =
-      singleCallThenAcknowledgeAgent(
-        callId = callId,
-        toolPayload = payload,
-        onModelInvoke = { modelInvocations++ },
-        onToolInvoke = { toolInvocations++ },
-      )
-    val runner = InMemoryRunner(agent = agent)
-
-    val events =
-      runner
-        .runAsync(userId = USER_ID, sessionId = SESSION_ID, newMessage = userMessage("start work"))
-        .toList()
-
-    val modelEvent = events.first { event -> event.functionCalls().any { it.id == callId } }
-    assertEquals(setOf(callId), modelEvent.longRunningToolIds)
-    val functionResponse = events.first { event ->
-      event.functionResponses().any { it.id == callId }
-    }
-    assertEquals(payload, functionResponse.functionResponses().single().response)
-    assertEquals("acknowledged", events.last().content?.parts?.singleOrNull()?.text)
-    assertEquals(2, modelInvocations)
-    assertEquals(1, toolInvocations)
-  }
+  // The four scenarios immediately below cover every combination of `is_resumable` x
+  // long-running tool return value (falsy vs truthy dict). Behaviour was verified against the
+  // Python ADK by direct source reading and manual exercise; the table summarises the observed
+  // contract. `end_of_agent` is short for "the framework emits an event with
+  // `actions.endOfAgent = true` for this agent."
+  //
+  // | # | resumable | tool return       | calls | events         | end_of_agent |
+  // | - | --------- | ----------------- | ----- | -------------- | ------------ |
+  // | 1 | off       | Unit/None         | 1     | [FC]           | n/a          |
+  // | 2 | off       | {status: pending} | 2     | [FC, FR, text] | n/a          |
+  // | 3 | on        | Unit/None         | 1     | [FC]           | suppressed   |
+  // | 4 | on        | {status: pending} | 1     | [FC, FR]       | suppressed   |
+  //
+  // For non-resumable mode (1, 2) the framework never emits `end_of_agent` at all -- the marker
+  // only exists in resumable mode. For resumable mode (3, 4) the marker is suppressed by the
+  // pause gates in `LlmAgent.runAsyncImpl` so the agent state stays live for an eventual resume.
 
   /**
-   * A long-running tool returning a non-dict value (here a `String`) is wrapped in `{"result":
-   * ...}` per the Gen-AI specs before being yielded as the function-response payload.
-   */
-  @Test
-  fun runAsync_longRunningToolReturnsString_wrapsInResultMap() = runTest {
-    val callId = "lr_call_str"
-    var toolInvocations = 0
-    val agent =
-      singleCallThenAcknowledgeAgent(
-        callId = callId,
-        toolPayload = "pending",
-        onModelInvoke = {},
-        onToolInvoke = { toolInvocations++ },
-      )
-    val runner = InMemoryRunner(agent = agent)
-
-    val events =
-      runner
-        .runAsync(userId = USER_ID, sessionId = SESSION_ID, newMessage = userMessage("start"))
-        .toList()
-
-    val functionResponse = events.first { event ->
-      event.functionResponses().any { it.id == callId }
-    }
-    assertEquals(
-      mapOf(BaseTool.RESULT_KEY to "pending"),
-      functionResponse.functionResponses().single().response,
-    )
-    assertEquals(1, toolInvocations)
-  }
-
-  /**
-   * A long-running tool returning `Unit` -- the framework's "no response yet" signal -- suppresses
-   * the function-response event. The model event still carries `longRunningToolIds`, so the agent
-   * loop terminates after the function-call event without re-invoking the model. This is the
-   * recommended idiom for long-running tools that have nothing to report at pause time.
+   * Non-resumable + falsy-returning long-running tool: returning `Unit` (Kotlin's "no response yet"
+   * signal) suppresses the FR event. The FC event carries `longRunningToolIds`, so the agent loop
+   * terminates after the FC without re-invoking the model. No `endOfAgent` (never emitted in
+   * non-resumable mode).
    *
    * Note: in Python ADK this corresponds to returning `None` (or any falsy value); see
    * `functions.py:582` (`if not function_response: return None`). Kotlin narrows the trigger to the
    * `Unit` singleton specifically.
+   *
+   * Verified against Python ADK (manual verification: `is_resumable=False, returns=None` produces
+   * `1 model call, [FC]` events with no `end_of_agent`).
    */
   @Test
   fun runAsync_longRunningToolReturnsUnit_suppressesFunctionResponseAndStops() = runTest {
@@ -172,6 +127,208 @@ class LongRunningToolIntegrationTest {
     assertEquals(setOf(callId), agentEvents.single().longRunningToolIds)
     assertTrue(agentEvents.single().functionResponses().isEmpty())
     assertEquals(1, modelInvocations)
+    assertEquals(1, toolInvocations)
+    assertTrue(
+      events.none { it.actions.endOfAgent },
+      "endOfAgent never emitted in non-resumable mode",
+    )
+  }
+
+  /**
+   * Non-resumable + dict-returning long-running tool: the dict becomes the function-response
+   * payload; the model is then re-invoked once with the placeholder in history and acknowledges.
+   * Across the turn, the model is invoked twice and the tool is invoked once. No `endOfAgent`
+   * (never emitted in non-resumable mode).
+   *
+   * Verified against Python ADK (manual verification: `is_resumable=False, returns={status:
+   * pending}` produces `2 model calls, [FC, FR, text]` events with no `end_of_agent`).
+   */
+  @Test
+  fun runAsync_longRunningToolReturnsDict_propagatesPayloadAndAcknowledges() = runTest {
+    val callId = "lr_call_dict"
+    val payload = mapOf("status" to "pending")
+    var modelInvocations = 0
+    var toolInvocations = 0
+    val agent =
+      singleCallThenAcknowledgeAgent(
+        callId = callId,
+        toolPayload = payload,
+        onModelInvoke = { modelInvocations++ },
+        onToolInvoke = { toolInvocations++ },
+      )
+    val runner = InMemoryRunner(agent = agent)
+
+    val events =
+      runner
+        .runAsync(userId = USER_ID, sessionId = SESSION_ID, newMessage = userMessage("start work"))
+        .toList()
+
+    val modelEvent = events.first { event -> event.functionCalls().any { it.id == callId } }
+    assertEquals(setOf(callId), modelEvent.longRunningToolIds)
+    val functionResponse = events.first { event ->
+      event.functionResponses().any { it.id == callId }
+    }
+    assertEquals(payload, functionResponse.functionResponses().single().response)
+    assertEquals("acknowledged", events.last().content?.parts?.singleOrNull()?.text)
+    assertEquals(2, modelInvocations)
+    assertEquals(1, toolInvocations)
+    assertTrue(
+      events.none { it.actions.endOfAgent },
+      "endOfAgent never emitted in non-resumable mode",
+    )
+  }
+
+  /**
+   * Resumable-mode counterpart of
+   * [runAsync_longRunningToolReturnsUnit_suppressesFunctionResponseAndStops]. Behaviour is
+   * identical to the non-resumable case for the externally-observable event stream (1 model
+   * invocation, FC-only, no FR) because both paths terminate via `isFinalResponse` on the FC event.
+   * The internal difference: on a resumable invocation the `endOfAgent` marker would normally fire
+   * after the loop, but the `LlmAgent.runAsyncImpl` per-event `shouldPause` check suppresses it so
+   * the agent state stays "live" for resumption.
+   *
+   * Verified against Python ADK (see
+   * `tests/unittests/flows/llm_flows/test_functions_long_running.py` counterpart and manual
+   * verification: `is_resumable=True, returns=None` produces `1 model call, [FC]` events with no
+   * `end_of_agent`).
+   */
+  @Test
+  fun runAsync_resumable_longRunningToolReturnsUnit_suppressesFunctionResponseAndStops() = runTest {
+    val callId = "lr_call_unit_resumable"
+    var modelInvocations = 0
+    var toolInvocations = 0
+    val agent =
+      LlmAgent(
+        name = AGENT_NAME,
+        model =
+          DummyModel("model") {
+            modelInvocations++
+            flowOf(modelFunctionCallResponse(TOOL_NAME_1, id = callId))
+          },
+        tools =
+          listOf(
+            DummyTool(
+              name = TOOL_NAME_1,
+              isLongRunning = true,
+              onRun = { _, _ ->
+                toolInvocations++
+                Unit
+              },
+            )
+          ),
+      )
+    val runner =
+      InMemoryRunner(agent = agent, resumabilityConfig = ResumabilityConfig(isResumable = true))
+
+    val events =
+      runner
+        .runAsync(userId = USER_ID, sessionId = SESSION_ID, newMessage = userMessage("start"))
+        .toList()
+
+    val agentEvents = events.filter { it.author == AGENT_NAME }
+    assertEquals(1, agentEvents.size, "only the function-call event should be emitted")
+    assertEquals(setOf(callId), agentEvents.single().longRunningToolIds)
+    assertTrue(agentEvents.single().functionResponses().isEmpty())
+    assertEquals(1, modelInvocations)
+    assertEquals(1, toolInvocations)
+    assertTrue(
+      events.none { it.actions.endOfAgent },
+      "endOfAgent must be suppressed on a long-running pause in a resumable invocation",
+    )
+  }
+
+  /**
+   * Resumable-mode counterpart of
+   * [runAsync_longRunningToolReturnsDict_propagatesPayloadAndAcknowledges]. Differs from the
+   * non-resumable case: only **1 model invocation** happens (vs 2 in non-resumable mode). The
+   * flow's `_run_one_step_async`-equivalent (`LlmAgentTurn.shouldPause`) short-circuits the second
+   * step when it sees the long-running FC in `events[-2:]`, so the model is never re-invoked with
+   * the pending payload in history. Externally-observable events are `[FC, FR]`; no `endOfAgent`
+   * (suppressed for the same reason as scenario 3).
+   *
+   * Verified against Python ADK (manual verification: `is_resumable=True, returns={status:
+   * pending}` produces `1 model call, [FC, FR]` events with no `end_of_agent`).
+   */
+  @Test
+  fun runAsync_resumable_longRunningToolReturnsDict_emitsFunctionResponseAndPauses() = runTest {
+    val callId = "lr_call_dict_resumable"
+    val payload = mapOf("status" to "pending")
+    var modelInvocations = 0
+    var toolInvocations = 0
+    val agent =
+      LlmAgent(
+        name = AGENT_NAME,
+        model =
+          DummyModel("model") {
+            modelInvocations++
+            flowOf(modelFunctionCallResponse(TOOL_NAME_1, id = callId))
+          },
+        tools =
+          listOf(
+            DummyTool(
+              name = TOOL_NAME_1,
+              isLongRunning = true,
+              onRun = { _, _ ->
+                toolInvocations++
+                payload
+              },
+            )
+          ),
+      )
+    val runner =
+      InMemoryRunner(agent = agent, resumabilityConfig = ResumabilityConfig(isResumable = true))
+
+    val events =
+      runner
+        .runAsync(userId = USER_ID, sessionId = SESSION_ID, newMessage = userMessage("start"))
+        .toList()
+
+    val agentEvents = events.filter { it.author == AGENT_NAME }
+    val fcEvent = agentEvents.first { it.functionCalls().any { call -> call.id == callId } }
+    assertEquals(setOf(callId), fcEvent.longRunningToolIds)
+    val frEvent = agentEvents.first { it.functionResponses().any { resp -> resp.id == callId } }
+    assertEquals(payload, frEvent.functionResponses().single().response)
+    assertEquals(
+      1,
+      modelInvocations,
+      "the flow's pause-check at step 2 prevents the second model invocation",
+    )
+    assertEquals(1, toolInvocations)
+    assertTrue(
+      events.none { it.actions.endOfAgent },
+      "endOfAgent must be suppressed on a long-running pause in a resumable invocation",
+    )
+  }
+
+  /**
+   * A long-running tool returning a non-dict value (here a `String`) is wrapped in `{"result":
+   * ...}` per the Gen-AI specs before being yielded as the function-response payload.
+   */
+  @Test
+  fun runAsync_longRunningToolReturnsString_wrapsInResultMap() = runTest {
+    val callId = "lr_call_str"
+    var toolInvocations = 0
+    val agent =
+      singleCallThenAcknowledgeAgent(
+        callId = callId,
+        toolPayload = "pending",
+        onModelInvoke = {},
+        onToolInvoke = { toolInvocations++ },
+      )
+    val runner = InMemoryRunner(agent = agent)
+
+    val events =
+      runner
+        .runAsync(userId = USER_ID, sessionId = SESSION_ID, newMessage = userMessage("start"))
+        .toList()
+
+    val functionResponse = events.first { event ->
+      event.functionResponses().any { it.id == callId }
+    }
+    assertEquals(
+      mapOf(BaseTool.RESULT_KEY to "pending"),
+      functionResponse.functionResponses().single().response,
+    )
     assertEquals(1, toolInvocations)
   }
 
