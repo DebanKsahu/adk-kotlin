@@ -158,12 +158,11 @@ class AdkWebServerTest {
   private val sessionService = FakeSessionService()
   private val artifactService = FakeArtifactService()
   private val agentLoader = FakeAgentLoader()
-  private val runner = FakeRunner()
 
   @Test
   fun healthCheck_returnsOk() = testApplication {
     application {
-      adkModule(sessionService, artifactService, runner, agentLoader, ApiServerSpanExporter())
+      adkModule(sessionService, artifactService, agentLoader, ApiServerSpanExporter())
     }
 
     val response = client.get("/api/health")
@@ -174,7 +173,7 @@ class AdkWebServerTest {
   @Test
   fun testSerialize_returnsJsonResponse() = testApplication {
     application {
-      adkModule(sessionService, artifactService, runner, agentLoader, ApiServerSpanExporter())
+      adkModule(sessionService, artifactService, agentLoader, ApiServerSpanExporter())
       routing {
         get("/api/test-serialize") {
           call.respond(RunResponse(output = "Ok output", sessionId = "test-session"))
@@ -192,7 +191,7 @@ class AdkWebServerTest {
   @Test
   fun runRoute_returnsResponse() = testApplication {
     application {
-      adkModule(sessionService, artifactService, runner, agentLoader, ApiServerSpanExporter())
+      adkModule(sessionService, artifactService, agentLoader, ApiServerSpanExporter())
     }
 
     val response =
@@ -211,7 +210,7 @@ class AdkWebServerTest {
   @Test
   fun runSseRoute_returnsStream() = testApplication {
     application {
-      adkModule(sessionService, artifactService, runner, agentLoader, ApiServerSpanExporter())
+      adkModule(sessionService, artifactService, agentLoader, ApiServerSpanExporter())
     }
 
     val response =

@@ -61,10 +61,22 @@ class AdkWebServer(
   private val port: Int = 8080,
   private val sessionService: SessionService,
   private val artifactService: ArtifactService,
-  private val runner: Runner,
   private val agentLoader: AgentLoader,
   private val apiServerSpanExporter: ApiServerSpanExporter,
 ) {
+  @Deprecated(
+    message = "Use constructor without runner",
+    replaceWith = ReplaceWith("AdkWebServer(port, sessionService, artifactService, agentLoader, apiServerSpanExporter)"),
+    level = DeprecationLevel.WARNING,
+  )
+  constructor(
+    port: Int = 8080,
+    sessionService: SessionService,
+    artifactService: ArtifactService,
+    runner: Runner,
+    agentLoader: AgentLoader,
+    apiServerSpanExporter: ApiServerSpanExporter,
+  ) : this(port, sessionService, artifactService, agentLoader, apiServerSpanExporter)
   companion object {
     private val logger = LoggerFactory.getLogger(AdkWebServer::class.java)
   }
@@ -76,7 +88,7 @@ class AdkWebServer(
 
     server =
       embeddedServer(Netty, port = port) {
-          adkModule(sessionService, artifactService, runner, agentLoader, apiServerSpanExporter)
+          adkModule(sessionService, artifactService, agentLoader, apiServerSpanExporter)
         }
         .start(wait = wait)
     logger.info("Ktor server started on port $port")
@@ -120,7 +132,6 @@ class AdkWebServer(
 fun Application.adkModule(
   sessionService: SessionService,
   artifactService: ArtifactService,
-  runner: Runner,
   agentLoader: AgentLoader,
   apiServerSpanExporter: ApiServerSpanExporter,
 ) {
@@ -157,4 +168,19 @@ fun Application.adkModule(
     sessionRoutes(sessionService)
     staticRoutes(this@adkModule)
   }
+}
+
+@Deprecated(
+  message = "Use adkModule without runner",
+  replaceWith = ReplaceWith("adkModule(sessionService, artifactService, agentLoader, apiServerSpanExporter)"),
+  level = DeprecationLevel.WARNING,
+)
+fun Application.adkModule(
+  sessionService: SessionService,
+  artifactService: ArtifactService,
+  runner: Runner,
+  agentLoader: AgentLoader,
+  apiServerSpanExporter: ApiServerSpanExporter,
+) {
+  adkModule(sessionService, artifactService, agentLoader, apiServerSpanExporter)
 }
