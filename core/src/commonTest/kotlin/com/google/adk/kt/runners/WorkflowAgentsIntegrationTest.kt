@@ -23,6 +23,7 @@ import com.google.adk.kt.models.LlmResponse
 import com.google.adk.kt.testing.DummyModel
 import com.google.adk.kt.testing.modelFunctionCallResponse
 import com.google.adk.kt.testing.modelMessage
+import com.google.adk.kt.testing.simplifyEvents
 import com.google.adk.kt.testing.textAgent
 import com.google.adk.kt.testing.userMessage
 import com.google.adk.kt.tools.ExitLoopTool
@@ -60,11 +61,10 @@ class WorkflowAgentsIntegrationTest {
         .runAsync(userId = "user1", sessionId = "session1", newMessage = userMessage("go"))
         .toList()
 
-    val agentTexts =
-      events
-        .filter { it.author == "first" || it.author == "second" }
-        .map { it.author to it.content?.parts?.singleOrNull()?.text }
-    assertEquals(listOf("first" to "first-text", "second" to "second-text"), agentTexts)
+    assertEquals(
+      listOf("first" to "first-text", "second" to "second-text"),
+      simplifyEvents(events.filter { it.author == "first" || it.author == "second" }),
+    )
   }
 
   /**
@@ -85,12 +85,10 @@ class WorkflowAgentsIntegrationTest {
         .runAsync(userId = "user1", sessionId = "session1", newMessage = userMessage("go"))
         .toList()
 
-    val childPairs =
-      events
-        .filter { it.author == "agent_a" || it.author == "agent_b" }
-        .map { it.author to it.content?.parts?.singleOrNull()?.text }
-        .toSet()
-    assertEquals(setOf("agent_a" to "from-a", "agent_b" to "from-b"), childPairs)
+    assertEquals(
+      setOf("agent_a" to "from-a", "agent_b" to "from-b"),
+      simplifyEvents(events.filter { it.author == "agent_a" || it.author == "agent_b" }).toSet(),
+    )
   }
 
   /** A [LoopAgent] with `maxIterations=3` and a text-emitting child runs exactly 3 iterations. */
@@ -105,10 +103,7 @@ class WorkflowAgentsIntegrationTest {
         .runAsync(userId = "user1", sessionId = "session1", newMessage = userMessage("go"))
         .toList()
 
-    val tickCount = events.count {
-      it.author == "looper" && it.content?.parts?.singleOrNull()?.text == "tick"
-    }
-    assertEquals(3, tickCount)
+    assertEquals(3, simplifyEvents(events).count { it == "looper" to "tick" })
   }
 
   /**

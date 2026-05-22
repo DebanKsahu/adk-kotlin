@@ -33,9 +33,11 @@ import com.google.adk.kt.testing.DummyAgent
 import com.google.adk.kt.testing.DummyModel
 import com.google.adk.kt.testing.DummyTool
 import com.google.adk.kt.testing.modelMessage
+import com.google.adk.kt.testing.simplifyEvents
 import com.google.adk.kt.testing.userMessage
 import com.google.adk.kt.types.Content
 import com.google.adk.kt.types.FunctionCall
+import com.google.adk.kt.types.FunctionResponse
 import com.google.adk.kt.types.Part
 import com.google.adk.kt.types.Role
 import kotlinx.coroutines.flow.flow
@@ -94,21 +96,22 @@ class LlmAgentTest {
 
     val events = agent.runAsync(context).toList()
 
-    assertEquals(3, events.size)
-
-    // First event is the model response with the function call
-    assertEquals("test-agent", events[0].author)
-    assertEquals(firstContent.parts[0].text, events[0].content?.parts?.get(0)?.text)
-    assertEquals("my_function", events[0].content?.parts?.get(1)?.functionCall?.name)
-
-    // Second event is the function response
-    assertEquals("test-agent", events[1].author)
-    assertEquals("my_function", events[1].content?.parts?.get(0)?.functionResponse?.name)
-    assertEquals(testResponse, events[1].content?.parts?.get(0)?.functionResponse?.response)
-
-    // Third event is the final model response
-    assertEquals("test-agent", events[2].author)
-    assertEquals(secondText, events[2].content?.parts?.get(0)?.text)
+    assertEquals(
+      listOf(
+        // First event is the model response with the function call.
+        "test-agent" to
+          listOf(
+            Part(text = "LLM response with function call"),
+            Part(functionCall = FunctionCall("my_function", mapOf("arg1" to "value1"))),
+          ),
+        // Second event is the function response.
+        "test-agent" to
+          Part(functionResponse = FunctionResponse("my_function", response = testResponse)),
+        // Third event is the final model response.
+        "test-agent" to secondText,
+      ),
+      simplifyEvents(events),
+    )
   }
 
   @Test
@@ -139,21 +142,25 @@ class LlmAgentTest {
 
     val events = agent.runAsync(context).toList()
 
-    assertEquals(3, events.size)
-
-    // First event has the longRunningToolIds set to the function call's id
-    assertEquals("test-agent", events[0].author)
-    assertEquals(firstContent.parts[0].text, events[0].content?.parts?.get(0)?.text)
+    assertEquals(
+      listOf(
+        // First event is the model response with the function call.
+        "test-agent" to
+          listOf(
+            Part(text = "LLM response with function call"),
+            Part(functionCall = FunctionCall("my_function", mapOf("arg1" to "value1"))),
+          ),
+        // Second event is the function response.
+        "test-agent" to
+          Part(functionResponse = FunctionResponse("my_function", response = testResponse)),
+        // Third event is the final model response.
+        "test-agent" to secondText,
+      ),
+      simplifyEvents(events),
+    )
+    // The long-running tool's call id is carried on the first event's longRunningToolIds.
     assertEquals(setOf("call_1"), events[0].longRunningToolIds)
     assertTrue(events[0].longRunningToolIds.contains(events[0].functionCalls().firstOrNull()?.id))
-
-    // Second event is the function response
-    assertEquals("test-agent", events[1].author)
-    assertEquals("my_function", events[1].content?.parts?.get(0)?.functionResponse?.name)
-
-    // Third event is the final model response
-    assertEquals("test-agent", events[2].author)
-    assertEquals(secondText, events[2].content?.parts?.get(0)?.text)
   }
 
   @Test
@@ -173,9 +180,7 @@ class LlmAgentTest {
 
     val events = agent.runAsync(context).toList()
 
-    assertEquals(1, events.size)
-    assertEquals("test-agent", events[0].author)
-    assertEquals("Fallback response", events[0].content?.parts?.get(0)?.text)
+    assertEquals(listOf("test-agent" to "Fallback response"), simplifyEvents(events))
   }
 
   @Test(expected = RuntimeException::class)
@@ -304,8 +309,10 @@ class LlmAgentTest {
 
     val events = agent.runAsync(context).toList()
 
+    assertEquals(listOf("test-agent" to "Final response"), simplifyEvents(events))
+    // The end-of-agent marker has no content (so it doesn't appear in simplifyEvents above)
+    // but must still be emitted on a resumable invocation.
     assertEquals(2, events.size)
-    assertEquals("Final response", events[0].content?.parts?.get(0)?.text)
     assertTrue(events[1].actions.endOfAgent)
     assertEquals("test-agent", events[1].author)
   }

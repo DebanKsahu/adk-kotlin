@@ -21,6 +21,7 @@ import com.google.adk.kt.runners.InMemoryRunner
 import com.google.adk.kt.sessions.SessionKey
 import com.google.adk.kt.testing.DummyAgent
 import com.google.adk.kt.testing.modelMessage
+import com.google.adk.kt.testing.simplifyEvents
 import com.google.adk.kt.testing.userMessage
 import com.google.adk.kt.types.Blob
 import com.google.adk.kt.types.Part
@@ -148,8 +149,7 @@ class GcsArtifactServiceTest {
         .runAsync(userId = USER_ID, sessionId = SESSION_ID, newMessage = userMessage("Execute run"))
         .toList()
 
-    assertThat(events).hasSize(1)
-    assertThat(events[0].content?.parts?.get(0)?.text).isEqualTo("Saved tracking output")
+    assertThat(simplifyEvents(events)).containsExactly(Role.MODEL to "Saved tracking output")
     verify(storage).create(any<BlobInfo>(), any<ByteArray>(), any<Storage.BlobTargetOption>())
   }
 

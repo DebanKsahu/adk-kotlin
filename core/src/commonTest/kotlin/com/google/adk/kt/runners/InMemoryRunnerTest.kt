@@ -31,6 +31,7 @@ import com.google.adk.kt.sessions.State
 import com.google.adk.kt.testing.DummyAgent
 import com.google.adk.kt.testing.DummyModel
 import com.google.adk.kt.testing.modelMessage
+import com.google.adk.kt.testing.simplifyEvents
 import com.google.adk.kt.testing.userMessage
 import com.google.adk.kt.types.Content
 import com.google.adk.kt.types.FunctionCall
@@ -295,9 +296,8 @@ class InMemoryRunnerTest {
         )
         .toList()
 
-    assertThat(events.size).isEqualTo(1)
-    assertThat(events[0].content?.parts?.get(0)?.text)
-      .isEqualTo("State is StringValue(value=saved_state)")
+    assertThat(simplifyEvents(events))
+      .containsExactly("test-agent" to "State is StringValue(value=saved_state)")
   }
 
   @Test

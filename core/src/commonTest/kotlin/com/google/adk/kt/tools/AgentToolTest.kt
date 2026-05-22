@@ -25,9 +25,13 @@ import com.google.adk.kt.testing.DummyAgent
 import com.google.adk.kt.testing.DummyModel
 import com.google.adk.kt.testing.modelFunctionCallResponse
 import com.google.adk.kt.testing.modelMessage
+import com.google.adk.kt.testing.simplifyEvents
 import com.google.adk.kt.testing.testInvocationContext
 import com.google.adk.kt.testing.testToolContext
 import com.google.adk.kt.testing.userMessage
+import com.google.adk.kt.types.FunctionCall
+import com.google.adk.kt.types.FunctionResponse
+import com.google.adk.kt.types.Part
 import com.google.adk.kt.types.Schema
 import com.google.adk.kt.types.Type
 import kotlin.test.Test
@@ -208,21 +212,24 @@ class AgentToolTest {
         .runAsync(userId = "user1", sessionId = "session1", newMessage = userMessage("hi"))
         .toList()
 
-    assertEquals(3, events.size)
-
-    val callEvent = events[0]
-    val functionCall = callEvent.content?.parts?.first()?.functionCall
-    assertNotNull(functionCall)
-    assertEquals("inner-agent", functionCall.name)
-    assertEquals("Hello inner", functionCall.args["request"])
-
-    val toolResponseEvent = events[1]
-    val functionResponse = toolResponseEvent.content?.parts?.first()?.functionResponse
-    assertNotNull(functionResponse)
-    assertEquals("inner-agent", functionResponse.name)
-    assertEquals("Response from inner agent", functionResponse.response["result"])
-
-    assertEquals("Final Answer", events[2].content?.parts?.first()?.text)
+    assertEquals(
+      listOf(
+        "main-agent" to
+          Part(
+            functionCall = FunctionCall("inner-agent", args = mapOf("request" to "Hello inner"))
+          ),
+        "main-agent" to
+          Part(
+            functionResponse =
+              FunctionResponse(
+                "inner-agent",
+                response = mapOf("result" to "Response from inner agent"),
+              )
+          ),
+        "main-agent" to "Final Answer",
+      ),
+      simplifyEvents(events),
+    )
   }
 
   @Test

@@ -25,13 +25,15 @@ import com.google.adk.kt.plugins.PluginManager
 import com.google.adk.kt.sessions.SessionKey
 import com.google.adk.kt.testing.DummyAgent
 import com.google.adk.kt.testing.DummyModel
+import com.google.adk.kt.testing.TRANSFER_TO_AGENT_RESPONSE_PART
 import com.google.adk.kt.testing.modelMessage
 import com.google.adk.kt.testing.modelParallelFunctionCallsResponse
 import com.google.adk.kt.testing.modelTransferToAgentResponse
+import com.google.adk.kt.testing.simplifyEvents
+import com.google.adk.kt.testing.transferToAgentCallPart
 import com.google.adk.kt.testing.userMessage
 import com.google.adk.kt.tools.BaseTool
 import com.google.adk.kt.tools.ToolContext
-import com.google.adk.kt.tools.TransferToAgentTool.Companion.TRANSFER_TO_AGENT_TOOL_NAME
 import com.google.adk.kt.types.Content
 import com.google.adk.kt.types.FunctionCall
 import com.google.adk.kt.types.FunctionDeclaration
@@ -187,9 +189,7 @@ class RunnerTest {
     val session = runner.sessionService.getSession(SessionKey(runner.appName, "user1", "session1"))
     assertNotNull(session)
     val events = session.events
-    assertEquals(1, events.size)
-    assertEquals(Role.USER, events[0].author)
-    assertEquals("Modified user message", events[0].content?.parts?.get(0)?.text)
+    assertEquals(listOf(Role.USER to "Modified user message"), simplifyEvents(events))
   }
 
   @Test
@@ -214,9 +214,7 @@ class RunnerTest {
         .runAsync(userId = "user1", sessionId = "session1", newMessage = Content(Role.USER))
         .toList()
 
-    assertEquals(1, events.size)
-    assertEquals(Role.MODEL, events[0].author)
-    assertEquals("Short-circuited!", events[0].content?.parts?.get(0)?.text)
+    assertEquals(listOf(Role.MODEL to "Short-circuited!"), simplifyEvents(events))
     assertFalse(agentRan)
   }
 
@@ -255,9 +253,7 @@ class RunnerTest {
         .runAsync(userId = "user1", sessionId = "session1", newMessage = Content(Role.USER))
         .toList()
 
-    assertEquals(1, events.size)
-    assertEquals(Role.MODEL, events[0].author)
-    assertEquals("Modified model response", events[0].content?.parts?.get(0)?.text)
+    assertEquals(listOf(Role.MODEL to "Modified model response"), simplifyEvents(events))
   }
 
   @Test
@@ -331,30 +327,29 @@ class RunnerTest {
       runner.runAsync(userId = "user1", sessionId = "session1", newMessage = userMessage).toList()
 
     // Verify flow events
-    val flowEvents = events.filter { it.author != Role.USER }
-    assertEquals(3, flowEvents.size)
-    // 1. root agent -> function call transfer_to_agent
-    assertEquals("root", flowEvents[0].author)
-    assertEquals(TRANSFER_TO_AGENT_TOOL_NAME, flowEvents[0].functionCalls()[0].name)
-    // 2. root agent -> function response (from ADK)
-    assertEquals("root", flowEvents[1].author)
-    assertEquals(TRANSFER_TO_AGENT_TOOL_NAME, flowEvents[1].functionResponses()[0].name)
-    // 3. sub agent -> text response
-    assertEquals("sub", flowEvents[2].author)
-    assertEquals("Hello from sub-agent!", flowEvents[2].content?.parts?.get(0)?.text)
+    assertEquals(
+      listOf(
+        // 1. root agent -> function call transfer_to_agent
+        "root" to transferToAgentCallPart("sub"),
+        // 2. root agent -> function response (from ADK)
+        "root" to TRANSFER_TO_AGENT_RESPONSE_PART,
+        // 3. sub agent -> text response
+        "sub" to "Hello from sub-agent!",
+      ),
+      simplifyEvents(events.filter { it.author != Role.USER }),
+    )
     // Verify session events
     val session = runner.sessionService.getSession(SessionKey(runner.appName, "user1", "session1"))
     assertNotNull(session)
-    val allEvents = session.events
-    assertEquals(4, allEvents.size)
-    assertEquals(Role.USER, allEvents[0].author)
-    assertEquals("Talk to sub agent.", allEvents[0].content?.parts?.get(0)?.text)
-    assertEquals("root", allEvents[1].author)
-    assertEquals(TRANSFER_TO_AGENT_TOOL_NAME, allEvents[1].functionCalls()[0].name)
-    assertEquals("root", allEvents[2].author)
-    assertEquals(TRANSFER_TO_AGENT_TOOL_NAME, allEvents[2].functionResponses()[0].name)
-    assertEquals("sub", allEvents[3].author)
-    assertEquals("Hello from sub-agent!", allEvents[3].content?.parts?.get(0)?.text)
+    assertEquals(
+      listOf(
+        Role.USER to "Talk to sub agent.",
+        "root" to transferToAgentCallPart("sub"),
+        "root" to TRANSFER_TO_AGENT_RESPONSE_PART,
+        "sub" to "Hello from sub-agent!",
+      ),
+      simplifyEvents(session.events),
+    )
   }
 
   @Test
@@ -370,8 +365,7 @@ class RunnerTest {
     val events = runner.run(userId = "user1", sessionId = "session1", newMessage = userMessage)
 
     val eventList = events.asSequence().toList()
-    assertEquals(1, eventList.size)
-    assertEquals("OK", eventList[0].content?.parts?.get(0)?.text)
+    assertEquals(listOf(Role.MODEL to "OK"), simplifyEvents(eventList))
   }
 
   @Test

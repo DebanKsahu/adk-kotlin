@@ -20,11 +20,16 @@ import com.google.adk.kt.models.LlmResponse
 import com.google.adk.kt.runners.InMemoryRunner
 import com.google.adk.kt.testing.DummyModel
 import com.google.adk.kt.testing.DummyTool
+import com.google.adk.kt.testing.TRANSFER_TO_AGENT_RESPONSE_PART
 import com.google.adk.kt.testing.modelFunctionCallResponse
 import com.google.adk.kt.testing.modelMessage
 import com.google.adk.kt.testing.modelTransferToAgentResponse
+import com.google.adk.kt.testing.simplifyEvents
+import com.google.adk.kt.testing.transferToAgentCallPart
 import com.google.adk.kt.testing.userMessage
-import com.google.adk.kt.tools.TransferToAgentTool.Companion.TRANSFER_TO_AGENT_TOOL_NAME
+import com.google.adk.kt.types.FunctionCall
+import com.google.adk.kt.types.FunctionResponse
+import com.google.adk.kt.types.Part
 import com.google.adk.kt.types.Role
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.toList
@@ -101,16 +106,19 @@ class LlmAgentTurnTest {
         .filter { it.author != Role.USER }
 
     assertEquals("tool should have been invoked exactly once", 1, toolCallCount)
-    assertEquals("events: $flowEvents", 5, flowEvents.size)
-    assertEquals("MissionControl", flowEvents[0].author)
-    assertEquals(TRANSFER_TO_AGENT_TOOL_NAME, flowEvents[0].functionCalls()[0].name)
-    assertEquals("MissionControl", flowEvents[1].author)
-    assertEquals(TRANSFER_TO_AGENT_TOOL_NAME, flowEvents[1].functionResponses()[0].name)
-    assertEquals("HeartOfGold", flowEvents[2].author)
-    assertEquals("return_random_number", flowEvents[2].functionCalls()[0].name)
-    assertEquals("HeartOfGold", flowEvents[3].author)
-    assertEquals("return_random_number", flowEvents[3].functionResponses()[0].name)
-    assertEquals("HeartOfGold", flowEvents[4].author)
-    assertEquals("The answer is 42.", flowEvents[4].content?.parts?.firstOrNull()?.text)
+    assertEquals(
+      listOf(
+        "MissionControl" to transferToAgentCallPart("HeartOfGold"),
+        "MissionControl" to TRANSFER_TO_AGENT_RESPONSE_PART,
+        "HeartOfGold" to Part(functionCall = FunctionCall("return_random_number")),
+        "HeartOfGold" to
+          Part(
+            functionResponse =
+              FunctionResponse("return_random_number", response = mapOf("number" to 42))
+          ),
+        "HeartOfGold" to "The answer is 42.",
+      ),
+      simplifyEvents(flowEvents),
+    )
   }
 }
