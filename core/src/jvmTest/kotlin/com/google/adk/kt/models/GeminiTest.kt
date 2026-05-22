@@ -257,6 +257,41 @@ class GeminiTest {
   }
 
   @Test
+  fun generateContent_nonStreaming_returnsResponse() = runTest {
+    val client = Client.builder().apiKey("fake").build()
+    val mockModels = mock<Gemini.GeminiModels>()
+    whenever(
+        mockModels.generateContent(
+          eq("gemini-3.1-flash-preview"),
+          any<List<GenAiContent>>(),
+          any<GenAiGenerateContentConfig>(),
+        )
+      )
+      .thenReturn(buildGenAiResponse("full response", finishReason = "STOP"))
+    val model = Gemini(client, "gemini-3.1-flash-preview", models = mockModels)
+
+    val responses =
+      model
+        .generateContent(
+          LlmRequest(
+            contents = listOf(userMessage("Hello")),
+            config = GenerateContentConfig(),
+          ),
+          stream = false,
+        )
+        .toList()
+
+    assertThat(responses).hasSize(1)
+    assertResponse(
+      responses[0],
+      expectedText = "full response",
+      isPartial = false,
+      expectedFinishReason = "STOP",
+    )
+    assertThat(responses[0].errorMessage).isNull()
+  }
+
+  @Test
   fun from_finishReasonStop_nullsOutErrorMessage() {
     val genAiResponse =
       GenAiGenerateContentResponse.builder()

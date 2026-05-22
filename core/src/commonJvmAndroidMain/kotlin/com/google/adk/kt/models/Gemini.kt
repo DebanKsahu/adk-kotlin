@@ -140,7 +140,10 @@ class Gemini(
       val aggregator = StreamingResponseAggregator()
 
       for (response in stream) {
-        logger.debug { "LLM Streaming Response chunk:\n${Json.toJsonString(response)}" }
+        logger.debug {
+          "LLM Streaming Response chunk: ${response.candidates().map { it.size }.orElse(0)} candidates, " +
+            "finishReason=${response.finishReason()}"
+        }
         emit(aggregator.processResponse(response.fromGenaiSdk()))
       }
 
@@ -148,7 +151,10 @@ class Gemini(
       aggregator.aggregate()?.let { emit(it) }
     } else {
       val response = models.generateContent(name, contents, config)
-      logger.debug { "LLM Response:\n${Json.toJsonString(response)}" }
+      logger.debug {
+        "LLM Response: ${response.candidates().map { it.size }.orElse(0)} candidates, " +
+          "finishReason=${response.finishReason()}"
+      }
       val llmResponse = LlmResponse.from(response.fromGenaiSdk())
       emit(llmResponse)
     }
@@ -159,7 +165,28 @@ class Gemini(
     config: GenerateContentConfig?,
   ): Map<String, Any?> = buildMap {
     put(LlmConstants.KEY_MODEL, name)
-    put(LlmConstants.KEY_CONTENTS, request.contents.map { it.toGenaiSdk() })
+    put(
+      LlmConstants.KEY_CONTENTS,
+      request.contents.map { content ->
+        mapOf(
+          "role" to content.role,
+          "parts" to
+            content.parts.map { part ->
+              buildMap {
+                part.text?.let { put("text", "${it.length} chars") }
+                part.inlineData?.let {
+                  put("inline_data", "${it.data?.size} bytes, mime_type=${it.mimeType}")
+                }
+                part.fileData?.let {
+                  put("file_data", "file_uri=${it.fileUri}, mime_type=${it.mimeType}")
+                }
+                part.functionCall?.let { put("function_call", it.name) }
+                part.functionResponse?.let { put("function_response", it.name) }
+              }
+            },
+        )
+      },
+    )
     put(LlmConstants.KEY_CONFIG, config)
   }
 

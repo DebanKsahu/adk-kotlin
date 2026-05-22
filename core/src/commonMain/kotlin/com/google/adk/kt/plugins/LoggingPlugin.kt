@@ -29,9 +29,14 @@ import com.google.adk.kt.tools.ToolContext
 import com.google.adk.kt.types.Content
 
 /**
- * A plugin that logs important information at each callback point.
+ * A plugin that logs a high volume of requests and responses handled by the agent at each callback
+ * point.
  *
- * This plugin helps print all critical events in the console.
+ * This plugin is primarily intended for ADK development and debugging purposes, helping to print
+ * all critical events in the console.
+ *
+ * **CAUTION**: The plugin logs raw requests / responses, including user prompts. Be mindful of
+ * sensitive data disclosure.
  */
 class LoggingPlugin(override val name: String = "logging_plugin") : Plugin {
 

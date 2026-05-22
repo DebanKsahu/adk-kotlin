@@ -53,12 +53,13 @@ private constructor(val generativeModel: GenerativeModel, override val name: Str
 
     private fun trace(request: GenerateContentRequest) = logger.trace {
       val imageTrace = request.image?.bitmap?.let { "${it.width}x${it.height}" } ?: "none"
-      "generateContentRequest: text: ${request.text}, promptPrefix: ${request.promptPrefix}, image: ${imageTrace}"
+      "generateContentRequest: text: ${request.text.textString.length} chars, " +
+        "promptPrefix: ${request.promptPrefix?.textString?.length ?: 0} chars, image: ${imageTrace}"
     }
 
     private fun trace(response: GenerateContentResponse) = logger.trace {
       val candidate = response.candidates.firstOrNull()
-      "generateContentResponse text: ${candidate?.text}, finishReason: ${candidate?.finishReason}"
+      "generateContentResponse text: ${candidate?.text?.length ?: 0} chars, finishReason: ${candidate?.finishReason}"
     }
   }
 
