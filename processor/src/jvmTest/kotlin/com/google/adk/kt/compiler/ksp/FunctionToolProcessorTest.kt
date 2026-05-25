@@ -207,6 +207,32 @@ class FunctionToolProcessorTest {
   }
 
   @Test
+  fun generatesListAnyReturn_mixedElementTypes_passesElementsThroughUnchanged() = runTest {
+    val tool = ReturnListAnyToolTool()
+    val context = createDummyContext()
+
+    val result = tool.execute(context, emptyMap()) as Map<*, *>
+
+    // Each element must preserve its Kotlin type (no `.toString()` or numeric coercion).
+    val inner = result["result"] as List<*>
+    assertThat(inner).containsExactly("GOOG", 123.45, 1000).inOrder()
+    assertThat(inner[1]).isInstanceOf(Double::class.javaObjectType)
+    assertThat(inner[2]).isInstanceOf(Int::class.javaObjectType)
+    assertThat(inner[0]).isInstanceOf(String::class.java)
+  }
+
+  @Test
+  fun generatesListNullableAnyReturn_nullableElements_includesNullEntries() = runTest {
+    val tool = ReturnListNullableAnyToolTool()
+    val context = createDummyContext()
+
+    val result = tool.execute(context, emptyMap()) as Map<*, *>
+
+    val inner = result["result"] as List<*>
+    assertThat(inner).containsExactly(42, null, "x").inOrder()
+  }
+
+  @Test
   fun generatesMapReturn_validType_succeeds() = runTest {
     val tool = ReturnMapToolTool()
     val context = createDummyContext()
@@ -214,6 +240,52 @@ class FunctionToolProcessorTest {
     val result = tool.execute(context, emptyMap())
 
     assertThat(result).isEqualTo(mapOf("result" to mapOf("a" to 1)))
+  }
+
+  @Test
+  fun generatesMapStringAnyReturn_mixedValueTypes_passesValuesThroughUnchanged() = runTest {
+    val tool = ReturnMapStringAnyToolTool()
+    val context = createDummyContext()
+
+    val result = tool.execute(context, emptyMap()) as Map<*, *>
+
+    // Each value must preserve its Kotlin type (no `.toString()` or numeric coercion).
+    val inner = result["result"] as Map<*, *>
+    assertThat(inner).containsExactly("symbol", "GOOG", "price", 123.45, "volume", 1000)
+    assertThat(inner["price"]).isInstanceOf(Double::class.javaObjectType)
+    assertThat(inner["volume"]).isInstanceOf(Int::class.javaObjectType)
+    assertThat(inner["symbol"]).isInstanceOf(String::class.java)
+  }
+
+  @Test
+  fun generatesMapStringNullableAnyReturn_nullableValues_includesNullEntries() = runTest {
+    val tool = ReturnMapStringNullableAnyToolTool()
+    val context = createDummyContext()
+
+    val result = tool.execute(context, emptyMap()) as Map<*, *>
+
+    val inner = result["result"] as Map<*, *>
+    assertThat(inner).containsExactly("present", 42, "absent", null)
+  }
+
+  @Test
+  fun generatesDeeplyNestedMapStringAnyReturn_mapListMap_preservesShapeAndTypes() = runTest {
+    val tool = ReturnDeeplyNestedMapStringAnyToolTool()
+    val context = createDummyContext()
+
+    val result = tool.execute(context, emptyMap()) as Map<*, *>
+
+    // Nested Map / List / Map structure must survive pass-through unchanged: no `.toString()`,
+    // no flattening, and inner primitives keep their Kotlin types.
+    val outer = result["result"] as Map<*, *>
+    val middleOuter = outer["outer"] as Map<*, *>
+    val middleList = middleOuter["middle"] as List<*>
+    assertThat(middleList).hasSize(2)
+    val firstLeaf = middleList[0] as Map<*, *>
+    assertThat(firstLeaf["leaf"]).isEqualTo(1)
+    assertThat(firstLeaf["leaf"]).isInstanceOf(Int::class.javaObjectType)
+    assertThat(firstLeaf["label"]).isEqualTo("first")
+    assertThat(middleOuter["scalar"]).isEqualTo("value")
   }
 
   @Test
@@ -351,8 +423,40 @@ fun returnListTool(): List<String> {
 }
 
 @Tool
+fun returnListAnyTool(): List<Any> {
+  return listOf("GOOG", 123.45, 1000)
+}
+
+@Tool
+fun returnListNullableAnyTool(): List<Any?> {
+  return listOf(42, null, "x")
+}
+
+@Tool
 fun returnMapTool(): Map<String, Int> {
   return mapOf("a" to 1)
+}
+
+@Tool
+fun returnMapStringAnyTool(): Map<String, Any> {
+  return mapOf("symbol" to "GOOG", "price" to 123.45, "volume" to 1000)
+}
+
+@Tool
+fun returnMapStringNullableAnyTool(): Map<String, Any?> {
+  return mapOf("present" to 42, "absent" to null)
+}
+
+@Tool
+fun returnDeeplyNestedMapStringAnyTool(): Map<String, Any> {
+  return mapOf(
+    "outer" to
+      mapOf(
+        "middle" to
+          listOf(mapOf("leaf" to 1, "label" to "first"), mapOf("leaf" to 2, "label" to "second")),
+        "scalar" to "value",
+      )
+  )
 }
 
 enum class MyResultEnum {

@@ -646,15 +646,21 @@ class FunctionToolGenerator(
         typeName == LIST_QUALIFIED_NAME -> {
           val listTypeArg = type.arguments.firstOrNull()?.type?.resolve()
           if (listTypeArg != null) {
-            val elementExpr = buildOutputSerialization("it", listTypeArg, visited)
-            if (elementExpr != null) {
-              if (type.isMarkedNullable) {
-                "${valueExpr}?.map { ${elementExpr} }"
-              } else {
-                "${valueExpr}.map { ${elementExpr} }"
-              }
+            // `Any` element: pass the list through; the wire layer handles arbitrary `Any?`
+            // elements.
+            if (listTypeArg.declaration.qualifiedName?.asString() == ANY_QUALIFIED_NAME) {
+              valueExpr
             } else {
-              null
+              val elementExpr = buildOutputSerialization("it", listTypeArg, visited)
+              if (elementExpr != null) {
+                if (type.isMarkedNullable) {
+                  "${valueExpr}?.map { ${elementExpr} }"
+                } else {
+                  "${valueExpr}.map { ${elementExpr} }"
+                }
+              } else {
+                null
+              }
             }
           } else {
             valueExpr
@@ -663,15 +669,21 @@ class FunctionToolGenerator(
         typeName == MAP_QUALIFIED_NAME -> {
           val mapValueTypeArg = type.arguments.getOrNull(1)?.type?.resolve()
           if (mapValueTypeArg != null) {
-            val valueSerialization = buildOutputSerialization("it.value", mapValueTypeArg, visited)
-            if (valueSerialization != null) {
-              if (type.isMarkedNullable) {
-                "${valueExpr}?.mapValues { ${valueSerialization} }"
-              } else {
-                "${valueExpr}.mapValues { ${valueSerialization} }"
-              }
+            // `Any` value: pass the map through; the wire layer handles arbitrary `Any?` values.
+            if (mapValueTypeArg.declaration.qualifiedName?.asString() == ANY_QUALIFIED_NAME) {
+              valueExpr
             } else {
-              null
+              val valueSerialization =
+                buildOutputSerialization("it.value", mapValueTypeArg, visited)
+              if (valueSerialization != null) {
+                if (type.isMarkedNullable) {
+                  "${valueExpr}?.mapValues { ${valueSerialization} }"
+                } else {
+                  "${valueExpr}.mapValues { ${valueSerialization} }"
+                }
+              } else {
+                null
+              }
             }
           } else {
             valueExpr
@@ -983,6 +995,7 @@ class FunctionToolGenerator(
     private val UNIT_QUALIFIED_NAME = Unit::class.qualifiedName
     private val LIST_QUALIFIED_NAME = List::class.qualifiedName
     private val MAP_QUALIFIED_NAME = Map::class.qualifiedName
+    private val ANY_QUALIFIED_NAME = Any::class.qualifiedName
     private val TOOL_CONTEXT_QUALIFIED_NAME = ToolContext::class.qualifiedName
     private val PRIMITIVE_OR_STRING_QUALIFIED_NAMES =
       setOf(

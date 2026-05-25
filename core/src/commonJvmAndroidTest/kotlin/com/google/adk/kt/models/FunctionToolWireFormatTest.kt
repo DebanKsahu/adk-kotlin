@@ -189,6 +189,86 @@ class FunctionToolWireFormatTest {
   }
 
   /**
+   * `@Tool` returning `Map<String, Any>` with mixed value types: the wire JSON must preserve each
+   * value's native type with no coercion to strings.
+   */
+  @Test
+  fun toolReturningMapStringAny_mixedValueTypes_emitsJsonObjectPreservingNativeTypes() = runTest {
+    assertFunctionResponseJsonEquals(
+      tool =
+        wireFormatTool("getStockPrice") {
+          mapOf<String, Any>("symbol" to "GOOG", "price" to 123.45, "volume" to 1000)
+        },
+      expected =
+        """
+        {
+          "id": "getStockPrice-call",
+          "name": "getStockPrice",
+          "response": {"result": {"symbol": "GOOG", "price": 123.45, "volume": 1000}}
+        }
+        """
+          .trimIndent(),
+    )
+  }
+
+  /** Sibling of `toolReturningMapStringAny_*` for the `List<Any>` shape. */
+  @Test
+  fun toolReturningListAny_mixedElementTypes_emitsJsonArrayPreservingNativeTypes() = runTest {
+    assertFunctionResponseJsonEquals(
+      tool = wireFormatTool("getStockHistory") { listOf<Any>("GOOG", 123.45, 1000) },
+      expected =
+        """
+        {
+          "id": "getStockHistory-call",
+          "name": "getStockHistory",
+          "response": {"result": ["GOOG", 123.45, 1000]}
+        }
+        """
+          .trimIndent(),
+    )
+  }
+
+  /** Deeply nested `Map<String, Any>`: Map -> Map -> List -> Map of primitives. */
+  @Test
+  fun toolReturningDeeplyNestedMapStringAny_mapListMap_emitsNestedJson() = runTest {
+    assertFunctionResponseJsonEquals(
+      tool =
+        wireFormatTool("getNestedData") {
+          mapOf<String, Any>(
+            "outer" to
+              mapOf(
+                "middle" to
+                  listOf(
+                    mapOf("leaf" to 1, "label" to "first"),
+                    mapOf("leaf" to 2, "label" to "second"),
+                  ),
+                "scalar" to "value",
+              )
+          )
+        },
+      expected =
+        """
+        {
+          "id": "getNestedData-call",
+          "name": "getNestedData",
+          "response": {
+            "result": {
+              "outer": {
+                "middle": [
+                  {"leaf": 1, "label": "first"},
+                  {"leaf": 2, "label": "second"}
+                ],
+                "scalar": "value"
+              }
+            }
+          }
+        }
+        """
+          .trimIndent(),
+    )
+  }
+
+  /**
    * Uber test: a tool returning a deeply-nested payload mixing primitives, an enum-like string, a
    * list of nested maps, and a map. Verifies the wire JSON Gemini receives faithfully reflects the
    * payload structure with no Kotlin-specific wrapper artifacts on the wire.

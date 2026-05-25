@@ -137,6 +137,56 @@ class AnySerializationsTest {
   }
 
   @Test
+  fun encodeAnyToJsonElement_mapStringAny_mixedValueTypes() {
+    val map = mapOf<String, Any>("symbol" to "GOOG", "price" to 123.45, "volume" to 1000)
+    val result = AnySerializations.encodeAnyToJsonElement(map)
+    assertThat(result).isInstanceOf(JsonObject::class.java)
+    val jsonObject = result as JsonObject
+    assertThat(jsonObject["symbol"]).isEqualTo(JsonPrimitive("GOOG"))
+    assertThat(jsonObject["price"]).isEqualTo(JsonPrimitive(123.45))
+    assertThat(jsonObject["volume"]).isEqualTo(JsonPrimitive(1000))
+  }
+
+  @Test
+  fun encodeAnyToJsonElement_listAny_mixedElementTypes() {
+    val list = listOf<Any>("GOOG", 123.45, 1000)
+    val result = AnySerializations.encodeAnyToJsonElement(list)
+    assertThat(result).isInstanceOf(JsonArray::class.java)
+    val jsonArray = result as JsonArray
+    assertThat(jsonArray[0]).isEqualTo(JsonPrimitive("GOOG"))
+    assertThat(jsonArray[1]).isEqualTo(JsonPrimitive(123.45))
+    assertThat(jsonArray[2]).isEqualTo(JsonPrimitive(1000))
+  }
+
+  @Test
+  fun encodeAnyToJsonElement_deeplyNestedMapStringAny() {
+    val map =
+      mapOf<String, Any>(
+        "outer" to
+          mapOf(
+            "middle" to
+              listOf(
+                mapOf("leaf" to 1, "label" to "first"),
+                mapOf("leaf" to 2, "label" to "second"),
+              ),
+            "scalar" to "value",
+          )
+      )
+    val result = AnySerializations.encodeAnyToJsonElement(map)
+    assertThat(result).isInstanceOf(JsonObject::class.java)
+    val outer = (result as JsonObject)["outer"] as JsonObject
+    assertThat(outer["scalar"]).isEqualTo(JsonPrimitive("value"))
+    val middle = outer["middle"] as JsonArray
+    assertThat(middle).hasSize(2)
+    val first = middle[0] as JsonObject
+    assertThat(first["leaf"]).isEqualTo(JsonPrimitive(1))
+    assertThat(first["label"]).isEqualTo(JsonPrimitive("first"))
+    val second = middle[1] as JsonObject
+    assertThat(second["leaf"]).isEqualTo(JsonPrimitive(2))
+    assertThat(second["label"]).isEqualTo(JsonPrimitive("second"))
+  }
+
+  @Test
   fun decodeJsonElementToAny_null() {
     val result = AnySerializations.decodeJsonElementToAny(JsonNull)
     assertThat(result).isNull()
