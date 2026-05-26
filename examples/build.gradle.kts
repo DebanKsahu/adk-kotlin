@@ -25,6 +25,7 @@ dependencies {
   implementation(project(":google-adk-kotlin-core"))
   implementation(libs.google.cloud.storage)
   implementation(libs.kotlinx.coroutines.core)
+  implementation(libs.opentelemetry.sdk)
 
   ksp(project(":google-adk-kotlin-processor"))
 }
