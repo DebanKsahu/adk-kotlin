@@ -31,7 +31,7 @@ val androidMinSdk = providers.gradleProperty("androidMinSdk").getOrElse("26").to
 
 allprojects {
   group = "com.google.adk"
-  version = "0.1.1"
+  version = "0.2.0"
 
   repositories {
     mavenCentral()
