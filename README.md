@@ -45,6 +45,8 @@ debugging, versioning, and deployment anywhere – from your laptop to the cloud
 
 If you're using Maven, add the following to your dependencies:
 
+<!-- x-release-please-released-start-version -->
+
 ```xml
 <dependency>
   <groupId>com.google.adk</groupId>
@@ -58,6 +60,8 @@ If you're using Gradle:
 ```kotlin
 implementation("com.google.adk:google-adk-kotlin-core:0.2.0")
 ```
+
+<!-- x-release-please-released-end -->
 
 To instead use an unreleased version, you could use <https://jitpack.io/#google/adk-kotlin/>;
 see <https://github.com/enola-dev/LearningADK#jitpack> for an example illustrating this.
