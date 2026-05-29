@@ -73,7 +73,7 @@ kotlin {
       dependencies {
         // Use standard Android genai or similar if available for OSS
         implementation(libs.google.genai.get().toString()) {
-            exclude(group = "com.google.protobuf", module = "protobuf-java")
+          exclude(group = "com.google.protobuf", module = "protobuf-java")
         } // Same as JVM if it's multiplatform, or use specific android one if separate.
         implementation(libs.google.protobuf.javalite)
         implementation(
@@ -95,17 +95,45 @@ kotlin {
         implementation(libs.robolectric)
       }
     }
+
+    val androidInstrumentedTest by getting {
+      dependencies {
+        implementation(libs.androidx.compose.ui.test.junit4)
+        implementation(libs.androidx.compose.ui.test.manifest)
+        implementation(libs.androidx.test.espresso.core)
+        implementation(libs.androidx.test.ext.junit)
+        implementation(libs.androidx.test.rules)
+        implementation(libs.androidx.test.runner)
+        implementation(libs.google.truth)
+        implementation(libs.kotlinx.coroutines.test)
+        implementation(libs.mockito.android)
+      }
+    }
   }
 }
 
 android {
   namespace = "com.google.adk"
 
+  // The instrumentation tests need compileSdk >= 35, so pass -PandroidCompileSdk=35:
+  //   ./gradlew :google-adk-kotlin-core:assembleDebugAndroidTest -PandroidCompileSdk=35
+  //   ./gradlew :google-adk-kotlin-core:connectedDebugAndroidTest -PandroidCompileSdk=35
   testOptions {
+
+    // Injected into the generated test manifest (libraries have no
+    // targetSdk). This avoids displaying a warning saying that the app
+    // was built for an older version of android
+    targetSdk = rootProject.extra["androidCompileSdk"] as Int
+
     unitTests {
       isReturnDefaultValues = true
       isIncludeAndroidResources = true
     }
+  }
+
+  defaultConfig {
+    testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    testApplicationId = "com.google.adk.kt.test"
   }
 }
 

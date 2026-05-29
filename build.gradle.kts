@@ -29,6 +29,12 @@ val jdkVersion = providers.gradleProperty("jdkVersion").getOrElse("17").toInt()
 val androidCompileSdk = providers.gradleProperty("androidCompileSdk").getOrElse("34").toInt()
 val androidMinSdk = providers.gradleProperty("androidMinSdk").getOrElse("26").toInt()
 
+// Expose the resolved Android SDK levels so subproject build scripts can reuse
+// them as a single source of truth (e.g. `core` sets `targetSdk` from this).
+extra["androidCompileSdk"] = androidCompileSdk
+
+extra["androidMinSdk"] = androidMinSdk
+
 allprojects {
   group = "com.google.adk"
   version = "0.2.1-SNAPSHOT" // x-release-please-version
@@ -64,6 +70,13 @@ subprojects {
     configure<com.android.build.gradle.LibraryExtension> {
       compileSdk = androidCompileSdk
       defaultConfig { minSdk = androidMinSdk }
+
+      packaging {
+        resources {
+          merges += "**/META-INF/INDEX.LIST"
+          merges += "**/META-INF/DEPENDENCIES"
+        }
+      }
     }
   }
 
