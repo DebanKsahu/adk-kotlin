@@ -115,6 +115,11 @@ kotlin {
 android {
   namespace = "com.google.adk"
 
+  // Reuse the test image bundled with the unit tests (androidUnitTest) in the instrumented
+  // tests as well, so it gets packaged into the androidTest APK and is readable via the
+  // instrumentation context's AssetManager.
+  sourceSets { getByName("androidTest") { assets.srcDir("src/androidUnitTest/assets") } }
+
   // The instrumentation tests need compileSdk >= 35, so pass -PandroidCompileSdk=35:
   //   ./gradlew :google-adk-kotlin-core:assembleDebugAndroidTest -PandroidCompileSdk=35
   //   ./gradlew :google-adk-kotlin-core:connectedDebugAndroidTest -PandroidCompileSdk=35
