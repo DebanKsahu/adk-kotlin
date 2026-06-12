@@ -22,7 +22,11 @@ plugins {
 sourceSets { main { java.srcDirs("src/main/kotlin") } }
 
 dependencies {
+  implementation(project(":google-adk-kotlin-a2a"))
   implementation(project(":google-adk-kotlin-core"))
+  implementation(libs.a2a.sdk.client)
+  implementation(libs.a2a.sdk.spec)
+  implementation(libs.a2a.sdk.transport.jsonrpc)
   implementation(libs.google.cloud.storage)
   implementation(libs.kotlinx.coroutines.core)
   implementation(libs.opentelemetry.sdk)

@@ -40,6 +40,7 @@ snakeyaml = "2.2"
 a2a-sdk-client = { module = "io.github.a2asdk:a2a-java-sdk-client", version.ref = "a2a" }
 a2a-sdk-common = { module = "io.github.a2asdk:a2a-java-sdk-common", version.ref = "a2a" }
 a2a-sdk-spec = { module = "io.github.a2asdk:a2a-java-sdk-spec", version.ref = "a2a" }
+a2a-sdk-transport-jsonrpc = { module = "io.github.a2asdk:a2a-java-sdk-transport-jsonrpc", version.ref = "a2a" }
 a2a-sdk-transport-rest = { module = "io.github.a2asdk:a2a-java-sdk-transport-rest", version.ref = "a2a" }
 androidx-compose-ui-test-junit4 = { module = "androidx.compose.ui:ui-test-junit4", version.ref = "androidx-compose-ui" }
 androidx-compose-ui-test-manifest = { module = "androidx.compose.ui:ui-test-manifest", version.ref = "androidx-compose-ui" }
