@@ -17,6 +17,7 @@
 plugins {
   kotlin("multiplatform")
   id("com.android.library")
+  alias(libs.plugins.ksp)
   id("maven-publish")
 }
 
@@ -63,6 +64,9 @@ kotlin {
     }
     val jvmTest by getting {
       dependsOn(commonJvmAndroidTest)
+      // Leaf (jvm/android) test source dir for KSP-generated `@Tool` `FunctionTool`s; KMP forbids
+      // `common*` test sets from referencing per-platform KSP output.
+      kotlin.srcDir("src/jvmAndroidKspTest/kotlin")
       dependencies {
         implementation(kotlin("test"))
         implementation(libs.mockito.kotlin)
@@ -86,6 +90,8 @@ kotlin {
     }
     val androidUnitTest by getting {
       dependsOn(commonJvmAndroidTest)
+      // See the `jvmTest` note: dedicated platform-test source dir for KSP-generated tools.
+      kotlin.srcDir("src/jvmAndroidKspTest/kotlin")
       dependencies {
         implementation(kotlin("test"))
         implementation(libs.androidx.test.core)
@@ -163,4 +169,12 @@ publishing {
       artifactId = "google-adk-kotlin-core"
     }
   }
+}
+
+dependencies {
+  // Run the KSP `FunctionTool` processor on the JVM and Android unit-test compilations so the
+  // `jvmAndroidKspTest` `@Tool` fixtures generate their `FunctionTool` subclasses.
+  add("kspJvmTest", project(":google-adk-kotlin-processor"))
+  add("kspAndroidTestDebug", project(":google-adk-kotlin-processor"))
+  add("kspAndroidTestRelease", project(":google-adk-kotlin-processor"))
 }
