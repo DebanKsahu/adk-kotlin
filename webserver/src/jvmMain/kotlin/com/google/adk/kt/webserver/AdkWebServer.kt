@@ -19,9 +19,9 @@ package com.google.adk.kt.webserver
 import com.google.adk.kt.artifacts.ArtifactService
 import com.google.adk.kt.runners.Runner
 import com.google.adk.kt.sessions.SessionService
+import com.google.adk.kt.telemetry.TelemetryConfig
 import com.google.adk.kt.webserver.AdkWebServer.StatusAwareLogger
 import com.google.adk.kt.webserver.loaders.AgentLoader
-import com.google.adk.kt.webserver.models.RunResponse
 import com.google.adk.kt.webserver.routes.appRoutes
 import com.google.adk.kt.webserver.routes.artifactRoutes
 import com.google.adk.kt.webserver.routes.debugRoutes
@@ -39,7 +39,6 @@ import io.ktor.serialization.gson.gson
 import io.ktor.server.application.Application
 import io.ktor.server.application.call
 import io.ktor.server.application.install
-import io.ktor.server.engine.ApplicationEngine
 import io.ktor.server.engine.EmbeddedServer
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
@@ -47,7 +46,6 @@ import io.ktor.server.plugins.calllogging.CallLogging
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.request.httpMethod
 import io.ktor.server.request.uri
-import io.ktor.server.response.respond
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.get
 import io.ktor.server.routing.routing
@@ -57,16 +55,27 @@ import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import org.slf4j.event.Level
 
+/**
+ * Embedded Ktor server exposing the ADK dev/web API.
+ *
+ * @property captureMessageContent When true, the server records prompt/response content into
+ *   telemetry spans so the Dev UI trace view can display it. This may capture PII and increase span
+ *   size, so it defaults to false; enable it only for local development.
+ */
 class AdkWebServer(
   private val port: Int = 8080,
   private val sessionService: SessionService,
   private val artifactService: ArtifactService,
   private val agentLoader: AgentLoader,
   private val apiServerSpanExporter: ApiServerSpanExporter,
+  private val captureMessageContent: Boolean = false,
 ) {
   @Deprecated(
     message = "Use constructor without runner",
-    replaceWith = ReplaceWith("AdkWebServer(port, sessionService, artifactService, agentLoader, apiServerSpanExporter)"),
+    replaceWith =
+      ReplaceWith(
+        "AdkWebServer(port, sessionService, artifactService, agentLoader, apiServerSpanExporter)"
+      ),
     level = DeprecationLevel.WARNING,
   )
   constructor(
@@ -76,7 +85,16 @@ class AdkWebServer(
     runner: Runner,
     agentLoader: AgentLoader,
     apiServerSpanExporter: ApiServerSpanExporter,
-  ) : this(port, sessionService, artifactService, agentLoader, apiServerSpanExporter)
+    captureMessageContent: Boolean = false,
+  ) : this(
+    port,
+    sessionService,
+    artifactService,
+    agentLoader,
+    apiServerSpanExporter,
+    captureMessageContent,
+  )
+
   companion object {
     private val logger = LoggerFactory.getLogger(AdkWebServer::class.java)
   }
@@ -88,7 +106,13 @@ class AdkWebServer(
 
     server =
       embeddedServer(Netty, port = port) {
-          adkModule(sessionService, artifactService, agentLoader, apiServerSpanExporter)
+          adkModule(
+            sessionService,
+            artifactService,
+            agentLoader,
+            apiServerSpanExporter,
+            captureMessageContent,
+          )
         }
         .start(wait = wait)
     logger.info("Ktor server started on port $port")
@@ -134,6 +158,7 @@ fun Application.adkModule(
   artifactService: ArtifactService,
   agentLoader: AgentLoader,
   apiServerSpanExporter: ApiServerSpanExporter,
+  captureMessageContent: Boolean = false,
 ) {
   install(CallLogging) {
     level = Level.INFO
@@ -157,6 +182,23 @@ fun Application.adkModule(
   val sdkTracerProvider = otelConfig.sdkTracerProvider()
   otelConfig.openTelemetrySdk(sdkTracerProvider)
 
+  // Message-content capture is controlled by the caller (AdkWebServer(captureMessageContent =
+  // ...)).
+  // The Dev UI trace view needs it to render prompt/response content, but it records potential PII
+  // into spans, so it stays OFF by default in the core library.
+  TelemetryConfig.captureMessageContent = captureMessageContent
+  if (captureMessageContent) {
+    LoggerFactory.getLogger("com.google.adk.kt.webserver.AdkWebServer")
+      .warn(
+        """
+        ADK web server enabled telemetry message-content capture: prompt/response content (which
+        may contain PII) will be recorded in trace spans. This is intended for local development
+        only.
+        """
+          .trimIndent()
+      )
+  }
+
   routing {
     get("/api/health") { call.respondText("OK") }
     appRoutes(agentLoader)
@@ -172,7 +214,8 @@ fun Application.adkModule(
 
 @Deprecated(
   message = "Use adkModule without runner",
-  replaceWith = ReplaceWith("adkModule(sessionService, artifactService, agentLoader, apiServerSpanExporter)"),
+  replaceWith =
+    ReplaceWith("adkModule(sessionService, artifactService, agentLoader, apiServerSpanExporter)"),
   level = DeprecationLevel.WARNING,
 )
 fun Application.adkModule(
@@ -181,6 +224,13 @@ fun Application.adkModule(
   runner: Runner,
   agentLoader: AgentLoader,
   apiServerSpanExporter: ApiServerSpanExporter,
+  captureMessageContent: Boolean = false,
 ) {
-  adkModule(sessionService, artifactService, agentLoader, apiServerSpanExporter)
+  adkModule(
+    sessionService,
+    artifactService,
+    agentLoader,
+    apiServerSpanExporter,
+    captureMessageContent,
+  )
 }
