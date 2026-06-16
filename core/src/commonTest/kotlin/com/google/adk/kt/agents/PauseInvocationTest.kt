@@ -37,7 +37,6 @@ import com.google.adk.kt.tools.ExitLoopTool
 import com.google.adk.kt.types.FunctionCall
 import com.google.adk.kt.types.FunctionResponse
 import com.google.adk.kt.types.Part
-import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
@@ -189,11 +188,6 @@ class PauseInvocationTest {
     assertFalse(simplified.contains("nested_sub_agent_1" to END_OF_AGENT))
   }
 
-  // TODO: re-enable once the LoopAgent event-truncation bug is fixed in a follow-up CL. LoopAgent
-  // currently drops a sub-agent's function-response event after a pause-triggering long-running
-  // call (it truncates the sub-agent's stream via `takeWhile`), so this test fails. The fix and
-  // this test's re-enablement are split into a separate CL to keep this one test-parity-only.
-  @Ignore
   @Test
   fun loopAgent_pausesOnLongRunningFunctionCall() = runTest {
     val subAgent1 =

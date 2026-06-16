@@ -22,7 +22,6 @@ import com.google.adk.kt.events.Event
 import com.google.adk.kt.logging.LoggerFactory
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.takeWhile
 
 /**
  * Persistent state of a [LoopAgent].
@@ -102,18 +101,19 @@ class LoopAgent(
 
         isResuming = false
 
-        subAgent
-          .runAsync(context)
-          .takeWhile { !shouldExit && !pauseInvocation }
-          .collect { event ->
-            emit(event)
-            if (event.actions.escalate) {
-              shouldExit = true
-            }
-            if (context.shouldPauseInvocation(event)) {
-              pauseInvocation = true
-            }
+        // Emit all of the sub-agent's events, then decide whether to stop. We must not truncate the
+        // sub-agent's stream early (e.g. via takeWhile): the event that triggers a pause -- a
+        // long-running function call -- is immediately followed by its function-response event,
+        // which still needs to be emitted. Mirrors Python ADK 1.x loop_agent.
+        subAgent.runAsync(context).collect { event ->
+          emit(event)
+          if (event.actions.escalate) {
+            shouldExit = true
           }
+          if (context.shouldPauseInvocation(event)) {
+            pauseInvocation = true
+          }
+        }
 
         if (shouldExit || pauseInvocation) {
           break@outer

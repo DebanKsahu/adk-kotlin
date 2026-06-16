@@ -89,8 +89,11 @@ class ExitLoopToolTest {
       it.functionResponses().any { fr -> fr.name == "exit_loop" }
     }
     assertEquals(1, functionResponseEvents.size)
+    // 3 iterations of (text response + end-of-agent) plus the exit-loop iteration
+    // (exit_loop call + response + end-of-agent) = 9. The loop emits all of a sub-agent's events
+    // before stopping, including the end-of-agent marker on the escalating iteration.
     val llmAgentEvents = events.filter { it.author == "llm-agent" }
-    assertEquals(8, llmAgentEvents.size)
+    assertEquals(9, llmAgentEvents.size)
     val stateEvents = events.filter { it.actions.agentState != null && it.author == "loop" }
     assertEquals(4, stateEvents.size)
     val lastStateEvent = stateEvents.last()
