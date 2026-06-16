@@ -64,7 +64,7 @@ class ToolTelemetryTest {
     val span = fakeTracer.recordedSpans[0]
     assertEquals("execute_tool test_tool", span.name)
     assertEquals("test_tool", span.attributes[TelemetryAttributes.GEN_AI_TOOL_NAME])
-    assertEquals("function", span.attributes[TelemetryAttributes.GEN_AI_TOOL_TYPE])
+    assertEquals("TestFunctionTool", span.attributes[TelemetryAttributes.GEN_AI_TOOL_TYPE])
     // Empty placeholders are emitted on tool spans for ADK Dev UI trace-view compatibility.
     assertEquals("{}", span.attributes[TelemetryAttributes.GCP_VERTEX_AGENT_LLM_REQUEST])
     assertEquals("{}", span.attributes[TelemetryAttributes.GCP_VERTEX_AGENT_LLM_RESPONSE])
@@ -191,6 +191,58 @@ class ToolTelemetryTest {
     assertNotNull(mergedSpan.attributes[TelemetryAttributes.GCP_VERTEX_AGENT_TOOL_RESPONSE])
   }
 
+  @Test
+  fun executeSingleFunctionCall_scalarResult_capturesScalarToolResponse() = runTest {
+    TelemetryConfig.captureMessageContent = true
+
+    val unused =
+      createInvocationContext()
+        .executeSingleFunctionCall(
+          FunctionCall(name = "scalar_tool", args = emptyMap(), id = "call_scalar"),
+          mapOf("scalar_tool" to ScalarFunctionTool()),
+        )
+
+    val span = fakeTracer.recordedSpans.single { it.name == "execute_tool scalar_tool" }
+    val toolResponse =
+      span.attributes[TelemetryAttributes.GCP_VERTEX_AGENT_TOOL_RESPONSE] as? String
+    assertNotNull(toolResponse)
+    assertNotEquals("{}", toolResponse)
+    assertContains(toolResponse, "scalar-result-value")
+  }
+
+  @Test
+  fun handleFunctionCalls_parallelCallsCaptureDisabled_mergedSpanHasEmptyToolResponse() = runTest {
+    TelemetryConfig.captureMessageContent = false
+
+    val merged =
+      createInvocationContext()
+        .handleFunctionCalls(
+          listOf(
+            FunctionCall(name = "tool_a", args = emptyMap(), id = "call_a"),
+            FunctionCall(name = "tool_b", args = emptyMap(), id = "call_b"),
+          ),
+          mapOf("tool_a" to NamedFunctionTool("tool_a"), "tool_b" to NamedFunctionTool("tool_b")),
+        )
+    assertNotNull(merged)
+
+    val mergedSpan = fakeTracer.recordedSpans.single { it.name == "execute_tool (merged)" }
+    assertEquals("{}", mergedSpan.attributes[TelemetryAttributes.GCP_VERTEX_AGENT_TOOL_RESPONSE])
+  }
+
+  @Test
+  fun executeSingleFunctionCall_toolThrowsIllegalArgument_setsErrorType() = runTest {
+    assertFailsWith<IllegalArgumentException> {
+      createInvocationContext()
+        .executeSingleFunctionCall(
+          FunctionCall(name = "arg_throwing_tool", args = emptyMap(), id = "call_arg_err"),
+          mapOf("arg_throwing_tool" to ArgThrowingFunctionTool()),
+        )
+    }
+
+    val span = fakeTracer.recordedSpans.single { it.name == "execute_tool arg_throwing_tool" }
+    assertEquals("IllegalArgumentException", span.attributes[TelemetryAttributes.ERROR_TYPE])
+  }
+
   private suspend fun recordSingleToolSpan(): DummySpan {
     val unused =
       createInvocationContext()
@@ -223,5 +275,19 @@ class ToolTelemetryTest {
 
     override suspend fun execute(context: ToolContext, args: Map<String, Any>): Any =
       throw IllegalStateException("boom")
+  }
+
+  private class ScalarFunctionTool : FunctionTool("scalar_tool", "A scalar tool") {
+    override fun declaration() = null
+
+    override suspend fun execute(context: ToolContext, args: Map<String, Any>): Any =
+      "scalar-result-value"
+  }
+
+  private class ArgThrowingFunctionTool : FunctionTool("arg_throwing_tool", "A throwing tool") {
+    override fun declaration() = null
+
+    override suspend fun execute(context: ToolContext, args: Map<String, Any>): Any =
+      throw IllegalArgumentException("bad arg")
   }
 }

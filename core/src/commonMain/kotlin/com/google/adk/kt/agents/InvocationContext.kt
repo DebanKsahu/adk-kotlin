@@ -36,7 +36,6 @@ import com.google.adk.kt.telemetry.TelemetryAttributes
 import com.google.adk.kt.telemetry.capturedJson
 import com.google.adk.kt.telemetry.withSpan
 import com.google.adk.kt.tools.BaseTool
-import com.google.adk.kt.tools.FunctionTool
 import com.google.adk.kt.tools.ToolContext
 import com.google.adk.kt.types.Content
 import com.google.adk.kt.types.FunctionCall
@@ -440,7 +439,7 @@ data class InvocationContext(
     this[TelemetryAttributes.GEN_AI_OPERATION_NAME] = TelemetryAttributes.OPERATION_EXECUTE_TOOL
     this[TelemetryAttributes.GEN_AI_TOOL_NAME] = tool.name
     this[TelemetryAttributes.GEN_AI_TOOL_DESCRIPTION] = tool.description
-    this[TelemetryAttributes.GEN_AI_TOOL_TYPE] = if (tool is FunctionTool) "function" else "unknown"
+    this[TelemetryAttributes.GEN_AI_TOOL_TYPE] = tool::class.simpleName ?: "unknown"
     this[TelemetryAttributes.GCP_VERTEX_AGENT_INVOCATION_ID] = invocationId
     session.key.id?.let { this[TelemetryAttributes.GCP_VERTEX_AGENT_SESSION_ID] = it }
     this[TelemetryAttributes.GCP_VERTEX_AGENT_EVENT_ID] = eventId

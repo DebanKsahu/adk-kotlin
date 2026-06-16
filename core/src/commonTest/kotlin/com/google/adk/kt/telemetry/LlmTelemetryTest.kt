@@ -33,6 +33,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.toList
@@ -161,6 +162,19 @@ class LlmTelemetryTest {
     val span = dummyTracer.recordedSpans.single { it.name == "call_llm" }
     assertEquals(50L, span.attributes[TelemetryAttributes.GEN_AI_USAGE_INPUT_TOKENS])
     assertEquals(60L, span.attributes[TelemetryAttributes.GEN_AI_USAGE_OUTPUT_TOKENS])
+  }
+
+  @Test
+  fun runAsync_callLlm_noUsageMetadata_omitsUsageTokens() = runTest {
+    val response = LlmResponse(content = modelMessage("Hello"))
+    val testModel = DummyModel.createSequential("test-model", listOf(response))
+    val agent = LlmAgent(name = "test-agent", model = testModel)
+
+    agent.runAsync(newContext(agent)).toList()
+
+    val span = dummyTracer.recordedSpans.single { it.name == "call_llm" }
+    assertNull(span.attributes[TelemetryAttributes.GEN_AI_USAGE_INPUT_TOKENS])
+    assertNull(span.attributes[TelemetryAttributes.GEN_AI_USAGE_OUTPUT_TOKENS])
   }
 
   @Test
