@@ -27,9 +27,12 @@ import java.lang.ThreadLocal
  * explicit OpenTelemetry SDK initialization) will have configured the global OpenTelemetry
  * instance. If unconfigured, this safely defaults to a No-Op tracer provided by OpenTelemetry,
  * preventing any crashes or side effects.
+ *
+ * The instrumentation scope name is `gcp.vertex.agent`, matching Python, Java, and Go ADK so traces
+ * are attributed to the same scope across languages.
  */
 internal actual fun defaultTracer(): Tracer =
-  OtelTracer(GlobalOpenTelemetry.getTracer("com.google.adk.kt.telemetry"))
+  OtelTracer(GlobalOpenTelemetry.getTracer(TelemetryAttributes.SYSTEM_GCP_VERTEX_AGENT))
 
 private val testTracerOverride = ThreadLocal<Tracer>()
 
