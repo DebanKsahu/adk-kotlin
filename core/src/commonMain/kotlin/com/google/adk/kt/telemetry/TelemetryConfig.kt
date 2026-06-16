@@ -19,11 +19,16 @@ package com.google.adk.kt.telemetry
 /**
  * Global configuration for ADK telemetry behavior.
  *
- * This is a singleton to maintain architectural parity with the Java and Python ADKs.
+ * This is a singleton to maintain architectural parity with the Java and Python ADKs. Note that the
+ * default for [captureMessageContent] intentionally **diverges** from those ADKs: Python/Java
+ * default message-content capture to ON (`true`) for backward compatibility, whereas the Kotlin ADK
+ * keeps it OFF (`false`) by default to avoid recording PII or large payloads in spans. Callers opt
+ * in explicitly (for example, the adk-web dev server).
  *
  * @property captureMessageContent Whether to capture raw prompts and payloads into traces. Defaults
- *   to false to prevent PII leakage and OOM errors. This is marked as @Volatile to ensure
- *   visibility across concurrent agent executions.
+ *   to false (diverging from Python/Java, which default to true) to prevent PII leakage and OOM
+ *   errors; callers opt in explicitly. This is marked as @Volatile to ensure visibility across
+ *   concurrent agent executions.
  */
 object TelemetryConfig {
   @Volatile var captureMessageContent: Boolean = false
