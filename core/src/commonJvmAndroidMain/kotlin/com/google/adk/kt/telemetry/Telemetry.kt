@@ -20,13 +20,13 @@ import io.opentelemetry.api.GlobalOpenTelemetry
 import java.lang.ThreadLocal
 
 /**
- * Resolves the default [Tracer] for the JVM platform.
+ * Resolves the default [Tracer] shared by the JVM and Android platforms.
  *
  * This relies on [GlobalOpenTelemetry] to provide the underlying tracer. It is expected that the
- * host application using this library (e.g., via a Java Agent or explicit OpenTelemetry SDK
- * initialization) will have configured the global OpenTelemetry instance. If unconfigured, this
- * safely defaults to a No-Op tracer provided by OpenTelemetry, preventing any crashes or side
- * effects.
+ * host application using this library (e.g., via a Java Agent, the OpenTelemetry Android SDK, or
+ * explicit OpenTelemetry SDK initialization) will have configured the global OpenTelemetry
+ * instance. If unconfigured, this safely defaults to a No-Op tracer provided by OpenTelemetry,
+ * preventing any crashes or side effects.
  */
 internal actual fun defaultTracer(): Tracer =
   OtelTracer(GlobalOpenTelemetry.getTracer("com.google.adk.kt.telemetry"))

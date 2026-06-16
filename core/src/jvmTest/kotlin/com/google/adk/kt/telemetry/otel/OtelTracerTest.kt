@@ -19,6 +19,11 @@ import com.google.common.truth.Truth.assertThat
 import io.opentelemetry.api.GlobalOpenTelemetry
 import io.opentelemetry.api.trace.Span as OpenTelemetrySpan
 import io.opentelemetry.context.Context
+import io.opentelemetry.sdk.common.CompletableResultCode
+import io.opentelemetry.sdk.trace.SdkTracerProvider
+import io.opentelemetry.sdk.trace.data.SpanData
+import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor
+import io.opentelemetry.sdk.trace.export.SpanExporter
 import kotlinx.coroutines.runBlocking
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -26,6 +31,34 @@ import org.junit.runners.JUnit4
 
 @RunWith(JUnit4::class)
 class OtelTracerTest {
+
+  @Test
+  fun spanBuilder_startSpan_isRecordedByOpenTelemetrySdk() {
+    val exportedSpans = mutableListOf<SpanData>()
+    val exporter =
+      object : SpanExporter {
+        override fun export(spans: Collection<SpanData>): CompletableResultCode {
+          exportedSpans.addAll(spans)
+          return CompletableResultCode.ofSuccess()
+        }
+
+        override fun flush(): CompletableResultCode = CompletableResultCode.ofSuccess()
+
+        override fun shutdown(): CompletableResultCode = CompletableResultCode.ofSuccess()
+      }
+    val tracerProvider =
+      SdkTracerProvider.builder().addSpanProcessor(SimpleSpanProcessor.create(exporter)).build()
+
+    try {
+      val otelTracer = OtelTracer(tracerProvider.get("test"))
+
+      otelTracer.spanBuilder("recorded-span").set("key", "value").startSpan().end()
+
+      assertThat(exportedSpans.map { it.name }).containsExactly("recorded-span")
+    } finally {
+      tracerProvider.close()
+    }
+  }
 
   @Test
   fun currentContext_fetchesOpenTelemetryContext() = runBlocking {

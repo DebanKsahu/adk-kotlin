@@ -46,6 +46,9 @@ kotlin {
       dependencies {
         implementation(libs.kxml2)
         implementation(libs.snakeyaml)
+        // Shared OpenTelemetry-backed tracer implementation (telemetry/otel) compiles into both the
+        // JVM and Android targets. opentelemetry-context is pulled in transitively by the API.
+        implementation(libs.opentelemetry.api)
       }
     }
     val commonJvmAndroidTest by creating { dependsOn(commonTest) }
@@ -56,7 +59,6 @@ kotlin {
         implementation(libs.google.cloud.storage)
         implementation(libs.google.genai)
         implementation(libs.mcp)
-        implementation(libs.opentelemetry.api)
         implementation(libs.kotlinx.coroutines.reactor)
         implementation(libs.slf4j.api)
         implementation(libs.google.flogger.extensions)
@@ -72,6 +74,8 @@ kotlin {
         implementation(libs.mockito.kotlin)
         implementation(libs.kotlinx.coroutines.test)
         implementation(libs.google.truth)
+        // OtelTracerTest exercises a real span-export round-trip through the OpenTelemetry SDK.
+        implementation(libs.opentelemetry.sdk)
       }
     }
     val androidMain by getting {
