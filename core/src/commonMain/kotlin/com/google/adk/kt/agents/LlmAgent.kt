@@ -103,6 +103,16 @@ import kotlinx.coroutines.flow.flow
  *   the current turn (the most recent user input or other-agent reply, plus any tool
  *   calls/responses produced within that turn). The system instruction and tools are preserved in
  *   both modes.
+ * @property maxSteps The maximum number of steps this agent runs within a single invocation, where
+ *   a step is one model call plus any tool calls or transfers it triggers. Once the cap is reached
+ *   the agent stops emitting further events, even if it has not yet produced a final response.
+ *   Defaults to `null`, meaning no cap: the agent keeps stepping until it produces a final response
+ *   or the invocation otherwise ends (which can run unbounded). Mirrors the Java ADK
+ *   `LlmAgent.maxSteps`.
+ *
+ * Note: this cap is enforced with local, in-process state that is not persisted, so it resets if
+ * the runtime restarts mid-invocation. "Max steps" is experimental and may evolve in the future
+ * (e.g. to support persistence).
  */
 class LlmAgent(
   name: String,
@@ -127,6 +137,7 @@ class LlmAgent(
   val onModelErrorCallbacks: List<OnModelErrorCallback> = emptyList(),
   val onToolErrorCallbacks: List<OnToolErrorCallback> = emptyList(),
   val includeContents: IncludeContents = IncludeContents.DEFAULT,
+  val maxSteps: Int? = null,
 ) :
   BaseAgent(
     name = name,
@@ -253,6 +264,7 @@ class LlmAgent(
 
   private fun executeTurns(context: InvocationContext): Flow<Event> = flow {
     var lastEvent: Event?
+    var stepsCompleted = 0
     do {
       lastEvent = null
       LlmAgentTurn(this@LlmAgent, context, systemBeforeTurnProcessors, systemAfterTurnProcessors)
@@ -261,6 +273,13 @@ class LlmAgent(
           lastEvent = event
           emit(event)
         }
+      stepsCompleted++
+      // Enforce the per-agent step cap. Checked after running the step so that maxSteps == N runs
+      // exactly N steps, mirroring the Java ADK BaseLlmFlow.run loop.
+      if (maxSteps != null && stepsCompleted >= maxSteps) {
+        logger.debug { "Ending agent execution for $name: reached maxSteps=$maxSteps." }
+        break
+      }
     } while (!context.isEndOfInvocation && lastEvent?.isFinalResponse == false)
   }
 

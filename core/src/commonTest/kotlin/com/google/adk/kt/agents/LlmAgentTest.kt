@@ -46,6 +46,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -67,6 +68,13 @@ class LlmAgentTest {
     val agent = LlmAgent(name = "test_agent", model = testModel)
 
     assertEquals(IncludeContents.DEFAULT, agent.includeContents)
+  }
+
+  @Test
+  fun init_defaultMaxSteps_isNull() {
+    val agent = LlmAgent(name = "test_agent", model = testModel)
+
+    assertNull(agent.maxSteps)
   }
 
   @Test
@@ -110,6 +118,106 @@ class LlmAgentTest {
           Part(functionResponse = FunctionResponse("my_function", response = testResponse)),
         // Third event is the final model response.
         "test-agent" to secondText,
+      ),
+      simplifyEvents(events),
+    )
+  }
+
+  @Test
+  fun runAsync_withMaxSteps_stopsAfterMaxSteps() = runTest {
+    val contentWithFunctionCall =
+      Content(
+        "model",
+        listOf(
+          Part(text = "LLM response with function call"),
+          Part(functionCall = FunctionCall("my_function", mapOf("arg1" to "value1"), id = "call_1")),
+        ),
+      )
+
+    // The model always asks to call the tool again; only the maxSteps cap stops the loop. The third
+    // response (a final text response) must never be requested.
+    val testModel =
+      DummyModel.createSequential(
+        "test-model",
+        listOf(
+          LlmResponse(content = contentWithFunctionCall),
+          LlmResponse(content = contentWithFunctionCall),
+          LlmResponse(content = modelMessage("This should never be returned.")),
+        ),
+      )
+
+    val testResponse = mapOf("response" to "response for my_function")
+    val testTool = DummyTool("my_function", onRun = { _, _ -> testResponse })
+
+    val agent =
+      LlmAgent(name = "test-agent", model = testModel, tools = listOf(testTool), maxSteps = 2)
+    val sessionService = InMemorySessionService()
+    val session = sessionService.createSession(SessionKey("app", "user", "test-session"))
+    val context = InvocationContext(agent = agent, session = session, runConfig = null)
+
+    val events = agent.runAsync(context).toList()
+
+    val functionCallPair =
+      "test-agent" to
+        listOf(
+          Part(text = "LLM response with function call"),
+          Part(functionCall = FunctionCall("my_function", mapOf("arg1" to "value1"))),
+        )
+    val functionResponsePair =
+      "test-agent" to
+        Part(functionResponse = FunctionResponse("my_function", response = testResponse))
+
+    // Exactly two steps run (each: model call + tool response); execution stops at the cap before
+    // the unreachable final response.
+    assertEquals(
+      listOf(functionCallPair, functionResponsePair, functionCallPair, functionResponsePair),
+      simplifyEvents(events),
+    )
+  }
+
+  @Test
+  fun runAsync_withMaxStepsNotReached_runsToFinalResponse() = runTest {
+    val contentWithFunctionCall =
+      Content(
+        "model",
+        listOf(
+          Part(text = "LLM response with function call"),
+          Part(functionCall = FunctionCall("my_function", mapOf("arg1" to "value1"), id = "call_1")),
+        ),
+      )
+    val finalText = "LLM response after function response"
+
+    val testModel =
+      DummyModel.createSequential(
+        "test-model",
+        listOf(
+          LlmResponse(content = contentWithFunctionCall),
+          LlmResponse(content = modelMessage(finalText)),
+        ),
+      )
+
+    val testResponse = mapOf("response" to "response for my_function")
+    val testTool = DummyTool("my_function", onRun = { _, _ -> testResponse })
+
+    // A generous cap that is never hit: the agent stops on its own final response.
+    val agent =
+      LlmAgent(name = "test-agent", model = testModel, tools = listOf(testTool), maxSteps = 5)
+    val sessionService = InMemorySessionService()
+    val session = sessionService.createSession(SessionKey("app", "user", "test-session"))
+    val context = InvocationContext(agent = agent, session = session, runConfig = null)
+
+    val events = agent.runAsync(context).toList()
+
+    assertEquals(
+      listOf(
+        "test-agent" to
+          listOf(
+            Part(text = "LLM response with function call"),
+            Part(functionCall = FunctionCall("my_function", mapOf("arg1" to "value1"))),
+          ),
+        "test-agent" to
+          Part(functionResponse = FunctionResponse("my_function", response = testResponse)),
+        "test-agent" to finalText,
       ),
       simplifyEvents(events),
     )
