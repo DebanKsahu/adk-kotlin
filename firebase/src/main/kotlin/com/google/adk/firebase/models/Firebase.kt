@@ -26,13 +26,24 @@ import com.google.firebase.ai.type.GenerateContentResponse
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 
-/** Implementation of the Model interface using Firebase AI. */
+/**
+ * Implementation of the Model interface using Firebase AI.
+ *
+ * **Limitation:** With thinking models, only [com.google.adk.kt.sessions.InMemorySessionService] is
+ * supported. Persistent session services cannot preserve thought signatures (the relevant Firebase
+ * `Part` field is not public), so restoring such a session will produce requests that the Firebase
+ * API rejects.
+ */
 class Firebase private constructor(override val name: String, val firebaseAI: FirebaseAI) : Model {
 
   private val conversions = Conversions()
 
   companion object {
-    /** Creates a new Firebase model. */
+    /**
+     * Creates a new Firebase model.
+     *
+     * Note the session persistence limitation with thinking models documented on [Firebase].
+     */
     fun create(
       /** The name of the underlying model, e.g. "gemini-3.1-flash-lite" */
       name: String,

@@ -208,7 +208,7 @@ internal class Conversions {
       if (part.isThought) {
         // add the FirebasePart as opaque data so we can reuse it as-is next time if the
         // containing part is present in the request
-        it.copy(opaqueData = part)
+        it.copy(thought = true, opaqueData = part)
       } else {
         it
       }
