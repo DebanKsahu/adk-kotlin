@@ -16,6 +16,8 @@
 package com.google.adk.kt.types
 
 import com.google.adk.kt.annotations.FrameworkInternalApi
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 
 /**
  * A part of a multi-modal prompt or response.
@@ -29,6 +31,7 @@ import com.google.adk.kt.annotations.FrameworkInternalApi
  */
 // note - this class resembles kotlin's data class, but needs to be a regular class to allow for
 // framework internal fields and deep comparison of the thought signature.
+@Serializable
 class Part
 @FrameworkInternalApi
 constructor(
@@ -49,8 +52,11 @@ constructor(
   /**
    * Other opaque data associated with the part to be interpreted by the agent. Reserved for ADK
    * internal use. Users should not set this field.
+   *
+   * Marked `@Transient` because it can hold arbitrary, non-serializable objects; it is
+   * intentionally excluded from the persisted form and is reset to `null` on deserialization.
    */
-  @FrameworkInternalApi val opaqueData: Any? = null,
+  @Transient @FrameworkInternalApi val opaqueData: Any? = null,
 ) {
 
   @OptIn(FrameworkInternalApi::class)

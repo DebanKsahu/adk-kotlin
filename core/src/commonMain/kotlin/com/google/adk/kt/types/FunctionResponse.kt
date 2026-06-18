@@ -16,6 +16,9 @@
 
 package com.google.adk.kt.types
 
+import kotlinx.serialization.Contextual
+import kotlinx.serialization.Serializable
+
 /**
  * Represents a function response.
  *
@@ -23,8 +26,9 @@ package com.google.adk.kt.types
  * @property response The response from the function.
  * @property id The unique identifier for this function response.
  */
+@Serializable
 data class FunctionResponse(
   val name: String,
-  val response: Map<String, Any?> = emptyMap(),
+  val response: Map<String, @Contextual Any?> = emptyMap(),
   val id: String? = null,
 )

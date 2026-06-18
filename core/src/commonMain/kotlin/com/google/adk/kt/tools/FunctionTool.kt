@@ -77,10 +77,10 @@ abstract class FunctionTool(
    *
    * @param context The current [ToolContext].
    * @param args The extracted arguments provided by the LLM.
-   * @return The tool's response, conventionally a `Map<String, Any>`. Non-map values are wrapped
-   *   under [BaseTool.RESULT_KEY]. Return `mapOf(ERROR_KEY to "<message>")` to signal an
-   *   LLM-visible error. From a long-running tool, return `Unit` to defer the response; see
-   *   [BaseTool.isLongRunning].
+   * @return The tool's response, conventionally a `Map<String, Any>` whose values are JSON-native.
+   *   Non-map values are wrapped under [BaseTool.RESULT_KEY]. Return `mapOf(ERROR_KEY to
+   *   "<message>")` to signal an LLM-visible error. From a long-running tool, return `Unit` to
+   *   defer the response; see [BaseTool.isLongRunning].
    */
   abstract suspend fun execute(context: ToolContext, args: Map<String, Any>): Any
 

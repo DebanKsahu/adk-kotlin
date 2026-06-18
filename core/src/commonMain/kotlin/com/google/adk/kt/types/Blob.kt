@@ -16,7 +16,10 @@
 
 package com.google.adk.kt.types
 
+import kotlinx.serialization.Serializable
+
 /** Represents binary data. */
+@Serializable
 data class Blob(
   val mimeType: String? = null,
   val displayName: String? = null,

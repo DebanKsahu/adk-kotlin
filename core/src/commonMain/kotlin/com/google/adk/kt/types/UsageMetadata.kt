@@ -16,7 +16,10 @@
 
 package com.google.adk.kt.types
 
+import kotlinx.serialization.Serializable
+
 /** Usage metadata for a generate content request. */
+@Serializable
 data class UsageMetadata(
   /** The number of tokens in the prompt. */
   val promptTokenCount: Int? = null,

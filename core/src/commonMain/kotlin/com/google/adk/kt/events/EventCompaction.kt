@@ -17,6 +17,7 @@
 package com.google.adk.kt.events
 
 import com.google.adk.kt.types.Content
+import kotlinx.serialization.Serializable
 
 /**
  * A record that a continuous range of session [Event]s has been replaced by a single piece of
@@ -31,6 +32,7 @@ import com.google.adk.kt.types.Content
  *   greater than or equal to [startTimestamp].
  * @property compactedContent The content that replaces the covered events in the prompt.
  */
+@Serializable
 data class EventCompaction(
   val startTimestamp: Long,
   val endTimestamp: Long,

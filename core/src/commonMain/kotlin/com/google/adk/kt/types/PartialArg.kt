@@ -16,24 +16,27 @@
 
 package com.google.adk.kt.types
 
+import kotlinx.serialization.Serializable
+
 /**
  * Represents one of the possible values within a [PartialArg].
  *
  * This sealed interface ensures that only one value type (boolean, number, string, or null) can be
  * represented at a time.
  */
+@Serializable
 sealed interface PartialArgValue {
   /** Represents a boolean value. */
-  data class BoolValue(val value: Boolean) : PartialArgValue
+  @Serializable data class BoolValue(val value: Boolean) : PartialArgValue
 
   /** Represents a double value. */
-  data class NumberValue(val value: Double) : PartialArgValue
+  @Serializable data class NumberValue(val value: Double) : PartialArgValue
 
   /** Represents a string value. */
-  data class StringValue(val value: String) : PartialArgValue
+  @Serializable data class StringValue(val value: String) : PartialArgValue
 
   /** Represents a null value. */
-  object NullValue : PartialArgValue
+  @Serializable object NullValue : PartialArgValue
 }
 
 /**
@@ -46,6 +49,7 @@ sealed interface PartialArgValue {
  * @property jsonPath A JSON Path (RFC 9535) to the argument being streamed.
  * @property willContinue Whether this is not the last part of the same json_path.
  */
+@Serializable
 data class PartialArg(
   val value: PartialArgValue? = null,
   val jsonPath: String? = null,

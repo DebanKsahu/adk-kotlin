@@ -17,6 +17,8 @@
 package com.google.adk.kt.types
 
 import com.google.adk.kt.ids.Uuid
+import kotlinx.serialization.Contextual
+import kotlinx.serialization.Serializable
 
 /**
  * Represents a function call in a generation response.
@@ -27,9 +29,10 @@ import com.google.adk.kt.ids.Uuid
  * @property partialArgs Partial argument fragments being streamed from the model.
  * @property willContinue Whether more partial fragments for this function call are expected.
  */
+@Serializable
 data class FunctionCall(
   val name: String = "",
-  val args: Map<String, Any?> = emptyMap(),
+  val args: Map<String, @Contextual Any?> = emptyMap(),
   val id: String? = null,
   val partialArgs: List<PartialArg>? = null,
   val willContinue: Boolean? = null,

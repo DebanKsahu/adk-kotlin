@@ -19,6 +19,8 @@ package com.google.adk.kt.events
 import com.google.adk.kt.agents.TypedData
 import com.google.adk.kt.collections.concurrentMutableMapOf
 import com.google.adk.kt.sessions.State
+import kotlinx.serialization.Contextual
+import kotlinx.serialization.Serializable
 
 /**
  * Represents the actions attached to an event.
@@ -41,9 +43,10 @@ import com.google.adk.kt.sessions.State
  * @property compaction If set, this event carries a context-compaction summary that replaces the
  *   compacted range of events when the next LLM prompt is built. See [EventCompaction].
  */
+@Serializable
 data class EventActions(
   var skipSummarization: Boolean = false,
-  val stateDelta: MutableMap<String, Any> = concurrentMutableMapOf(),
+  val stateDelta: MutableMap<String, @Contextual Any> = concurrentMutableMapOf(),
   val artifactDelta: MutableMap<String, Int> = concurrentMutableMapOf(),
   var transferToAgent: String? = null,
   var escalate: Boolean = false,

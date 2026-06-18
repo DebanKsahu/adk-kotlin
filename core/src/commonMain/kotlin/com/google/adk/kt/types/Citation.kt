@@ -16,7 +16,7 @@
 
 package com.google.adk.kt.types
 
+import kotlinx.serialization.Serializable
+
 /** Represents a citation to a source. */
-data class Citation(
-  val title: String? = null,
-)
+@Serializable data class Citation(val title: String? = null)

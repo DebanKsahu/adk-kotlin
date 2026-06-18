@@ -16,58 +16,62 @@
 
 package com.google.adk.kt.agents
 
+import kotlinx.serialization.Serializable
+
 /** A type-safe hierarchy for agent state variables, ensuring primitives don't collapse. */
+@Serializable
 sealed class TypedData {
   /** Represents a null value in the agent state. */
-  data object NullValue : TypedData()
+  @Serializable data object NullValue : TypedData()
 
   /**
    * Represents an integer value in the agent state.
    *
    * @property value The integer value.
    */
-  data class IntValue(val value: Int) : TypedData()
+  @Serializable data class IntValue(val value: Int) : TypedData()
 
   /**
    * Represents a long value in the agent state.
    *
    * @property value The long value.
    */
-  data class LongValue(val value: Long) : TypedData()
+  @Serializable data class LongValue(val value: Long) : TypedData()
 
   /**
    * Represents a string value in the agent state.
    *
    * @property value The string value.
    */
-  data class StringValue(val value: String) : TypedData()
+  @Serializable data class StringValue(val value: String) : TypedData()
 
   /**
    * Represents a boolean value in the agent state.
    *
    * @property value The boolean value.
    */
-  data class BooleanValue(val value: Boolean) : TypedData()
+  @Serializable data class BooleanValue(val value: Boolean) : TypedData()
 
   /**
    * Represents a double value in the agent state.
    *
    * @property value The double value.
    */
-  data class DoubleValue(val value: Double) : TypedData()
+  @Serializable data class DoubleValue(val value: Double) : TypedData()
 
   /**
    * Represents a list of state values.
    *
    * @property elements The list of child values.
    */
-  data class ListValue(val elements: List<TypedData>) : TypedData()
+  @Serializable data class ListValue(val elements: List<TypedData>) : TypedData()
 
   /**
    * Represents a map of state values.
    *
    * @property fields The map of child values keyed by field name.
    */
+  @Serializable
   data class MapValue(val fields: Map<String, TypedData>) : TypedData() {
     /** Gets a string value for the given [key]. */
     fun getString(key: String): String? {

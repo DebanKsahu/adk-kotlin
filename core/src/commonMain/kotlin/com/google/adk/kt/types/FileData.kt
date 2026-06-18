@@ -16,7 +16,10 @@
 
 package com.google.adk.kt.types
 
+import kotlinx.serialization.Serializable
+
 /** Represents file data. */
+@Serializable
 data class FileData(
   /** The MIME type of the file. */
   val mimeType: String? = null,

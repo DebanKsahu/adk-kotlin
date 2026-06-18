@@ -16,5 +16,7 @@
 
 package com.google.adk.kt.types
 
+import kotlinx.serialization.Serializable
+
 /** Metadata returned to client when grounding is enabled. */
-data class GroundingMetadata(val imageSearchQueries: List<String> = emptyList())
+@Serializable data class GroundingMetadata(val imageSearchQueries: List<String> = emptyList())

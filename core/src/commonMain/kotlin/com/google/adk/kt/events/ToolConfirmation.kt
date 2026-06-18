@@ -15,12 +15,16 @@
  */
 package com.google.adk.kt.events
 
+import kotlinx.serialization.Contextual
+import kotlinx.serialization.Serializable
+
 /** Represents a tool confirmation configuration. */
+@Serializable
 data class ToolConfirmation(
   /** Whether the tool execution is confirmed. */
   val confirmed: Boolean,
   /** The confirmation payload. */
-  val payload: Any? = null,
+  @Contextual val payload: Any? = null,
   /** The hint for the confirmation. */
   val hint: String? = null,
 ) {

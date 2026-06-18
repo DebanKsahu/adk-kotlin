@@ -16,7 +16,10 @@
 
 package com.google.adk.kt.types
 
+import kotlinx.serialization.Serializable
+
 /** Represents the content of a response, including its role and parts. */
+@Serializable
 data class Content(
   /** The role of the content. */
   val role: String? = null,

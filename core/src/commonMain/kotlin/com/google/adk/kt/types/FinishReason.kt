@@ -16,7 +16,10 @@
 
 package com.google.adk.kt.types
 
+import kotlinx.serialization.Serializable
+
 /** The reason why the generation finished. */
+@Serializable
 enum class FinishReason {
   /** The finish reason is unspecified. */
   FINISH_REASON_UNSPECIFIED,

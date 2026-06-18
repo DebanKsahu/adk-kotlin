@@ -26,6 +26,8 @@ import com.google.adk.kt.types.FunctionResponse
 import com.google.adk.kt.types.GroundingMetadata
 import com.google.adk.kt.types.UsageMetadata
 import kotlin.time.Clock
+import kotlinx.serialization.Contextual
+import kotlinx.serialization.Serializable
 
 /**
  * Represents an event in a session.
@@ -53,6 +55,7 @@ import kotlin.time.Clock
  * @property modelVersion The model version used to generate the response.
  * @property timestamp The timestamp of the event.
  */
+@Serializable
 data class Event(
   val id: String = Uuid.random(),
   val invocationId: String? = null,
@@ -72,7 +75,7 @@ data class Event(
   val groundingMetadata: GroundingMetadata? = null,
   val modelVersion: String? = null,
   val citationMetadata: CitationMetadata? = null,
-  val customMetadata: Map<String, Any>? = null,
+  val customMetadata: Map<String, @Contextual Any>? = null,
   val timestamp: Long = Clock.System.now().toEpochMilliseconds(),
 ) {
 

@@ -20,6 +20,11 @@ package com.google.adk.kt.annotations
  * Annotates a function to be exposed as an executable tool by the Google ADK Kotlin. KSP will
  * generate a corresponding [com.google.adk.kt.tools.FunctionTool] wrapper for annotated functions.
  *
+ * The generated wrapper converts the function's return value into a JSON-native [Map]: data
+ * classes, enums, lists, maps, and nested structures are translated at compile time. A function may
+ * therefore return a data class directly, unlike a hand-written [com.google.adk.kt.tools.BaseTool],
+ * whose result must already be JSON-native.
+ *
  * Note: this annotation shares its simple name with [com.google.adk.kt.types.Tool], the GenAI tool
  * definition data class. Files that need to reference both should use an import alias.
  *
