@@ -94,6 +94,8 @@ kotlin {
           libs.google.auth.oauth2.http
         ) // Android compatible version or use separate for Android if needed.
         implementation(libs.google.mlkit.genai.prompt)
+        implementation(libs.androidx.room.runtime)
+        implementation(libs.androidx.room.ktx)
       }
     }
     val androidUnitTest by getting {
@@ -186,3 +188,7 @@ dependencies {
   add("kspAndroidTestDebug", project(":google-adk-kotlin-processor"))
   add("kspAndroidTestRelease", project(":google-adk-kotlin-processor"))
 }
+
+// Room's annotation processor runs via KSP. Wire it only against the Android target since the
+// Room runtime is androidMain-only.
+dependencies { add("kspAndroid", libs.androidx.room.compiler) }
