@@ -74,6 +74,8 @@ kotlin {
         implementation(libs.mockito.kotlin)
         implementation(libs.kotlinx.coroutines.test)
         implementation(libs.google.truth)
+        // GeminiTest asserts tracking headers on real requests via a local MockWebServer.
+        implementation(libs.okhttp.mockwebserver)
         // OtelTracerTest exercises a real span-export round-trip through the OpenTelemetry SDK.
         implementation(libs.opentelemetry.sdk)
       }

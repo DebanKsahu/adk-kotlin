@@ -191,11 +191,13 @@ class Gemini(
   }
 
   companion object {
-    private val TRACKING_HEADERS =
-      mapOf(
-        "x-goog-api-client" to "google-adk-kotlin/$VERSION",
-        "user-agent" to "google-adk-kotlin/$VERSION",
-      )
+    // Usage-tracking headers shared across ADK SDKs: "google-adk/<v> gl-<lang>/<ver>".
+    private val TRACKING_HEADERS = run {
+      val frameworkLabel = "google-adk/$VERSION"
+      val languageLabel = "gl-kotlin/${KotlinVersion.CURRENT}"
+      val versionHeaderValue = "$frameworkLabel $languageLabel"
+      mapOf("x-goog-api-client" to versionHeaderValue, "user-agent" to versionHeaderValue)
+    }
 
     private val logger = LoggerFactory.getLogger(Gemini::class)
   }
