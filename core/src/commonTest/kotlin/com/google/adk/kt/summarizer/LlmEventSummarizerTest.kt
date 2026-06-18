@@ -17,6 +17,8 @@
 package com.google.adk.kt.summarizer
 
 import com.google.adk.kt.events.Event
+import com.google.adk.kt.events.EventActions
+import com.google.adk.kt.events.EventCompaction
 import com.google.adk.kt.models.LlmRequest
 import com.google.adk.kt.models.LlmResponse
 import com.google.adk.kt.testing.DummyModel
@@ -146,7 +148,7 @@ class LlmEventSummarizerTest {
         Event(author = "user", content = null, timestamp = 5L),
         // Event with an empty-text part — silently skipped by the isNotEmpty filter.
         Event(author = "model", content = Content.fromText(Role.MODEL, ""), timestamp = 6L),
-        // Event with a function call — silently skipped (non-text part).
+        // Event with a function call — rendered as a tool-call line.
         Event(
           author = "model",
           content =
@@ -157,7 +159,7 @@ class LlmEventSummarizerTest {
             ),
           timestamp = 7L,
         ),
-        // Event with a function response — silently skipped (non-text part).
+        // Event with a function response — rendered as a tool-response line.
         Event(
           author = "model",
           content =
@@ -177,17 +179,19 @@ class LlmEventSummarizerTest {
     assertNotNull(summarizer.summarizeEvents(events))
 
     val expectedHistory =
-      "user: User says...\nmodel: Model replies...\nuser: Another user input\nmodel: More model text"
+      "user: User says...\nmodel: Model replies...\nuser: Another user input\nmodel: More model" +
+        " text\nmodel called tool: tool({k=v})\nTool response from tool: {a=b}"
     val expectedPrompt =
-      "The following is a conversation history between a user and an AI agent. Please summarize " +
-        "the conversation, focusing on key information and decisions made, as well as any " +
-        "unresolved questions or tasks. The summary should be concise and capture the essence " +
-        "of the interaction.\n\n$expectedHistory"
+      "The following is a conversation history between a user and an AI agent. It may or may not " +
+        "start from a compacted history. Please identify and reiterate the user request, " +
+        "summarize the context so far, focusing on key decisions made and information obtained, " +
+        "as well as any unresolved questions or tasks. The summary should be concise and capture " +
+        "the essence of the interaction.\n\n$expectedHistory"
     assertEquals(expectedPrompt, captured.single().contents.single().parts.single().text)
   }
 
   @Test
-  fun summarizeEvents_authorAndRoleDiffer_labelIncludesBoth() = runTest {
+  fun summarizeEvents_labelUsesAuthorNotContentRole() = runTest {
     val captured = mutableListOf<LlmRequest>()
     val summarizer =
       LlmEventSummarizer(
@@ -198,37 +202,14 @@ class LlmEventSummarizerTest {
           }
       )
 
+    // Author ("weather_agent") differs from the content role ("model"); the label uses the author.
     val event = Event(author = "weather_agent", content = modelMessage("sunny"), timestamp = 1L)
 
     assertNotNull(summarizer.summarizeEvents(listOf(event)))
 
     val promptText = captured.single().contents.single().parts.single().text
     assertNotNull(promptText)
-    assertEquals(true, promptText.endsWith("\nweather_agent (model): sunny"))
-  }
-
-  @Test
-  fun summarizeEvents_authorAndRoleMatch_labelIsSingleValue() = runTest {
-    val captured = mutableListOf<LlmRequest>()
-    val summarizer =
-      LlmEventSummarizer(
-        model =
-          DummyModel("test-model") { request ->
-            captured.add(request)
-            flowOf(LlmResponse(content = Content(parts = listOf(Part(text = "summary")))))
-          }
-      )
-
-    // author == content.role; the parenthetical role should be suppressed as redundant.
-    val event = modelEvent("ok", timestamp = 1L)
-
-    assertNotNull(summarizer.summarizeEvents(listOf(event)))
-
-    val promptText = captured.single().contents.single().parts.single().text
-    assertNotNull(promptText)
-    assertEquals(true, promptText.endsWith("\nmodel: ok"))
-    // Not `model (model): ok`.
-    assertEquals(false, promptText.contains("model (model)"))
+    assertEquals(true, promptText.endsWith("\nweather_agent: sunny"))
   }
 
   @Test
@@ -255,6 +236,144 @@ class LlmEventSummarizerTest {
     val promptText = captured.single().contents.single().parts.single().text
     assertNotNull(promptText)
     assertEquals(true, promptText.endsWith("\nweather_tool: 65F"))
+  }
+
+  @Test
+  fun summarizeEvents_includesThoughts() = runTest {
+    val captured = mutableListOf<LlmRequest>()
+    val summarizer =
+      LlmEventSummarizer(
+        model =
+          DummyModel("test-model") { request ->
+            captured.add(request)
+            flowOf(LlmResponse(content = Content(parts = listOf(Part(text = "summary")))))
+          }
+      )
+
+    val events =
+      listOf(
+        userEvent("What is the weather?", timestamp = 1L),
+        Event(
+          author = "model",
+          content =
+            Content(
+              role = Role.MODEL,
+              parts =
+                listOf(
+                  Part(text = "Let me check the tool output.", thought = true),
+                  Part(text = "It is sunny."),
+                ),
+            ),
+          timestamp = 2L,
+        ),
+      )
+
+    assertNotNull(summarizer.summarizeEvents(events))
+
+    val promptText = captured.single().contents.single().parts.single().text
+    assertNotNull(promptText)
+    assertEquals(
+      true,
+      promptText.endsWith(
+        "user: What is the weather?\nmodel (thought): Let me check the tool output.\n" +
+          "model: It is sunny."
+      ),
+    )
+  }
+
+  @Test
+  fun summarizeEvents_skipsCompactionEventThought() = runTest {
+    val captured = mutableListOf<LlmRequest>()
+    val summarizer =
+      LlmEventSummarizer(
+        model =
+          DummyModel("test-model") { request ->
+            captured.add(request)
+            flowOf(LlmResponse(content = Content(parts = listOf(Part(text = "summary")))))
+          }
+      )
+
+    val events =
+      listOf(
+        Event(
+          author = "model",
+          content =
+            Content(
+              role = Role.MODEL,
+              parts =
+                listOf(
+                  Part(text = "Stale summarizer reasoning.", thought = true),
+                  Part(text = "Prior summary."),
+                ),
+            ),
+          actions =
+            EventActions(
+              compaction =
+                EventCompaction(
+                  startTimestamp = 0L,
+                  endTimestamp = 1L,
+                  compactedContent = modelMessage("Prior"),
+                )
+            ),
+          timestamp = 1L,
+        ),
+        userEvent("New user input", timestamp = 2L),
+      )
+
+    assertNotNull(summarizer.summarizeEvents(events))
+
+    val promptText = captured.single().contents.single().parts.single().text
+    assertNotNull(promptText)
+    assertEquals(true, promptText.endsWith("model: Prior summary.\nuser: New user input"))
+    // The compaction event's own thought must not leak into the next summary.
+    assertEquals(false, promptText.contains("Stale summarizer reasoning."))
+  }
+
+  @Test
+  fun summarizeEvents_truncatesLargeToolResponse() = runTest {
+    val captured = mutableListOf<LlmRequest>()
+    val summarizer =
+      LlmEventSummarizer(
+        model =
+          DummyModel("test-model") { request ->
+            captured.add(request)
+            flowOf(LlmResponse(content = Content(parts = listOf(Part(text = "summary")))))
+          }
+      )
+
+    val largeValue = "x".repeat(2500)
+    val events =
+      listOf(
+        Event(
+          author = "model",
+          content =
+            Content(
+              role = Role.MODEL,
+              parts =
+                listOf(
+                  Part(
+                    functionResponse =
+                      FunctionResponse(name = "search", response = mapOf("data" to largeValue))
+                  )
+                ),
+            ),
+          timestamp = 1L,
+        )
+      )
+
+    assertNotNull(summarizer.summarizeEvents(events))
+
+    val promptText = captured.single().contents.single().parts.single().text
+    assertNotNull(promptText)
+
+    val rendered = mapOf("data" to largeValue).toString()
+    assertEquals(
+      true,
+      promptText.endsWith(
+        "Tool response from search: ${rendered.take(2000)}... [truncated ${rendered.length - 2000} chars]"
+      ),
+    )
+    assertEquals(false, promptText.contains(largeValue))
   }
 
   @Test

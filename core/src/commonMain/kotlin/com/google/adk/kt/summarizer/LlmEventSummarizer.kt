@@ -50,10 +50,17 @@ class LlmEventSummarizer(val model: Model, val promptTemplate: String = DEFAULT_
     val logger = LoggerFactory.getLogger(LlmEventSummarizer::class)
     const val CONVERSATION_HISTORY_PLACEHOLDER = "{conversation_history}"
     const val DEFAULT_PROMPT_TEMPLATE =
-      "The following is a conversation history between a user and an AI agent. Please summarize " +
-        "the conversation, focusing on key information and decisions made, as well as any " +
-        "unresolved questions or tasks. The summary should be concise and capture the essence of " +
-        "the interaction.\n\n$CONVERSATION_HISTORY_PLACEHOLDER"
+      "The following is a conversation history between a user and an AI agent. It may or may not " +
+        "start from a compacted history. Please identify and reiterate the user request, " +
+        "summarize the context so far, focusing on key decisions made and information obtained, " +
+        "as well as any unresolved questions or tasks. The summary should be concise and capture " +
+        "the essence of the interaction.\n\n$CONVERSATION_HISTORY_PLACEHOLDER"
+
+    /**
+     * Tool call args and responses can be large (e.g. search results). Cap how much of each is
+     * rendered.
+     */
+    const val MAX_TOOL_CONTENT_CHARS = 2000
   }
 
   init {
@@ -101,26 +108,50 @@ class LlmEventSummarizer(val model: Model, val promptTemplate: String = DEFAULT_
   }
 
   /**
-   * Formats the conversation as `<label>: <text>` lines, one per text part. The label includes both
-   * the event's author and the content role when they differ, so multi-agent sessions preserve
-   * attribution (`weather_agent (model): ...`). Non-text parts are skipped.
+   * Formats events into prompt text, including thoughts and tool calls.
+   *
+   * Thoughts carry the agent's analysis of tool responses, and function calls and responses carry
+   * the evidence retrieved so far, so all three are included. Thoughts emitted by a compaction
+   * event are skipped so a prior summary's reasoning does not leak into the next summary. Function
+   * call args and responses are truncated to [MAX_TOOL_CONTENT_CHARS] so compaction does not
+   * inflate the very context it exists to shrink. Each line is labeled with the event's
+   * [Event.author].
    */
-  private fun formatEvents(events: List<Event>): String =
-    events
-      .asSequence()
-      .flatMap { event ->
-        val label = formatLabel(author = event.author, role = event.content?.role)
-        event.content?.parts.orEmpty().asSequence().mapNotNull { part ->
-          part.text?.takeIf { it.isNotEmpty() }?.let { "$label: $it" }
+  private fun formatEvents(events: List<Event>): String {
+    val formattedHistory = mutableListOf<String>()
+    for (event in events) {
+      val parts = event.content?.parts
+      if (parts.isNullOrEmpty()) continue
+      val isCompaction = event.actions.compaction != null
+      for (part in parts) {
+        if (part.thought == true && !part.text.isNullOrEmpty()) {
+          if (!isCompaction) {
+            formattedHistory.add("${event.author} (thought): ${part.text}")
+          }
+        } else if (!part.text.isNullOrEmpty()) {
+          formattedHistory.add("${event.author}: ${part.text}")
+        }
+
+        if (part.functionCall != null) {
+          formattedHistory.add(
+            "${event.author} called tool: " +
+              "${part.functionCall.name}(${truncate(part.functionCall.args.toString())})"
+          )
+        }
+        if (part.functionResponse != null) {
+          formattedHistory.add(
+            "Tool response from ${part.functionResponse.name}: " +
+              truncate(part.functionResponse.response.toString())
+          )
         }
       }
-      .joinToString(separator = "\n")
+    }
+    return formattedHistory.joinToString(separator = "\n")
+  }
 
-  /**
-   * Builds the per-line label. Includes both [author] and [role] when both are meaningful and
-   * differ, so multi-agent sessions retain agent attribution; collapses to a single value when they
-   * are redundant or when [role] is missing.
-   */
-  private fun formatLabel(author: String, role: String?): String =
-    if (role == null || role == author) author else "$author ($role)"
+  /** Caps [text] at [MAX_TOOL_CONTENT_CHARS], marking how many characters were dropped. */
+  private fun truncate(text: String): String {
+    if (text.length <= MAX_TOOL_CONTENT_CHARS) return text
+    return "${text.take(MAX_TOOL_CONTENT_CHARS)}... [truncated ${text.length - MAX_TOOL_CONTENT_CHARS} chars]"
+  }
 }
