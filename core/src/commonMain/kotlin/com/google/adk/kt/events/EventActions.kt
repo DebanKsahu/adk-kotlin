@@ -34,7 +34,15 @@ import kotlinx.serialization.Serializable
  * @property escalate The agent is escalating to a higher level agent.
  * @property endOfAgent If true, the current agent has finished its current run. Note that there can
  *   be multiple events with [endOfAgent] set to `true` for the same agent within one invocation
- *   when there is a loop. This should only be set by the ADK workflow.
+ *   when there is a loop. The ADK workflow sets this when an agent's run completes naturally. In
+ *   addition, tools and callbacks may set this on an event they produce to request the current LLM
+ *   agent's per-step loop to stop after the current step, mirroring Java ADK's
+ *   `EventActions.setEndInvocation(true)` / `setEndOfAgent(true)`. Note: this only stops the
+ *   current LLM agent's step loop; it does not terminate an enclosing workflow agent
+ *   (`SequentialAgent`, `LoopAgent`, `ParallelAgent`). To break out of a `LoopAgent`, set
+ *   [escalate] instead. `CallbackContext.endInvocation()` / `ToolContext.endInvocation()` are
+ *   convenience helpers for the same per-agent stop signal via
+ *   [InvocationContext.isEndOfInvocation].
  * @property requestedToolConfirmations A map of tool confirmations requested by this event, keyed
  *   by function call ID.
  * @property rewindBeforeInvocationId If set, the agent will rewind history before the specified

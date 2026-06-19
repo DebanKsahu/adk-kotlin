@@ -20,6 +20,8 @@ package com.google.adk.kt.agents
 
 import com.google.adk.kt.agents.LlmAgent.IncludeContents
 import com.google.adk.kt.annotations.ExperimentalResumabilityFeature
+import com.google.adk.kt.callbacks.AfterToolCallback
+import com.google.adk.kt.callbacks.BeforeModelCallback
 import com.google.adk.kt.callbacks.CallbackChoice
 import com.google.adk.kt.callbacks.OnModelErrorCallback
 import com.google.adk.kt.events.Event
@@ -870,6 +872,290 @@ class LlmAgentTest {
 
       assertFailsWith<IllegalArgumentException> { agent.runAsync(context).toList() }
     }
+
+  /**
+   * Tool sets `toolContext.actions.endOfAgent = true` mid-invocation: the per-step loop in
+   * [LlmAgent.executeTurns] must honor it and stop after the current step, mirroring Java ADK's
+   * `BaseLlmFlow.run` loop that breaks on `getLast(eventList).actions().endInvocation()`. This
+   * exercises the Java-tool path described in b/522621203 (a Java tool calling
+   * `toolContext.actions().setEndInvocation(true)`, which sets `EventActions.endOfAgent` in the
+   * common data model).
+   */
+  @Test
+  fun runAsync_toolSetsEndOfAgent_stopsLoopAfterStep() = runTest {
+    val contentWithFunctionCall =
+      Content(
+        "model",
+        listOf(
+          Part(text = "calling tool"),
+          Part(functionCall = FunctionCall("stop_tool", mapOf("arg1" to "v"), id = "call_1")),
+        ),
+      )
+
+    // Second LLM response must never be requested: the tool ends the invocation after step 1.
+    val testModel =
+      DummyModel.createSequential(
+        "test-model",
+        listOf(
+          LlmResponse(content = contentWithFunctionCall),
+          LlmResponse(content = modelMessage("This should never be returned.")),
+        ),
+      )
+
+    val stopTool =
+      DummyTool(
+        name = "stop_tool",
+        onRun = { ctx, _ ->
+          ctx.actions.endOfAgent = true
+          mapOf("status" to "stopped")
+        },
+      )
+
+    val agent = LlmAgent(name = "test-agent", model = testModel, tools = listOf(stopTool))
+    val sessionService = InMemorySessionService()
+    val session = sessionService.createSession(SessionKey("app", "user", "test-session"))
+    val context = InvocationContext(agent = agent, session = session, runConfig = null)
+
+    val events = agent.runAsync(context).toList()
+
+    // Exactly one step ran: the model call + the function response. No second model call.
+    assertEquals(2, events.size)
+    val responsePart = events[1].content?.parts?.firstOrNull()
+    assertEquals("stop_tool", responsePart?.functionResponse?.name)
+    assertEquals(mapOf("status" to "stopped"), responsePart?.functionResponse?.response)
+    assertTrue(
+      "loop must honor tool-set endOfAgent on the last event of the step",
+      events.last().actions.endOfAgent,
+    )
+  }
+
+  /**
+   * Tool calls the new `toolContext.endInvocation()` helper: same outcome as setting
+   * `actions.endOfAgent = true`, via the context-flag path (parity with Python ADK's
+   * `tool_context._invocation_context.end_invocation = True`).
+   */
+  @Test
+  fun runAsync_toolCallsEndInvocation_stopsLoopAfterStep() = runTest {
+    val contentWithFunctionCall =
+      Content(
+        "model",
+        listOf(Part(functionCall = FunctionCall("stop_tool", emptyMap(), id = "call_1"))),
+      )
+
+    val testModel =
+      DummyModel.createSequential(
+        "test-model",
+        listOf(
+          LlmResponse(content = contentWithFunctionCall),
+          LlmResponse(content = modelMessage("Unreachable.")),
+        ),
+      )
+
+    val stopTool =
+      DummyTool(
+        name = "stop_tool",
+        onRun = { ctx, _ ->
+          ctx.endInvocation()
+          mapOf("status" to "stopped")
+        },
+      )
+
+    val agent = LlmAgent(name = "test-agent", model = testModel, tools = listOf(stopTool))
+    val sessionService = InMemorySessionService()
+    val session = sessionService.createSession(SessionKey("app", "user", "test-session"))
+    val context = InvocationContext(agent = agent, session = session, runConfig = null)
+
+    val events = agent.runAsync(context).toList()
+
+    // Exactly one step ran (no second model call); behavioral evidence that the loop honored
+    // the context-level end-of-invocation flag. (The flag itself lives on the per-agent context
+    // created by `BaseAgent.runAsync(parentContext).forAgent(this)`, which is a data-class copy
+    // of the test's outer `context`, so asserting it directly on `context` is not meaningful.)
+    assertEquals(2, events.size)
+  }
+
+  /**
+   * A model/agent callback ends the invocation via the new `CallbackContext.endInvocation()`
+   * helper. Without this helper, callbacks defined outside the `com.google.adk.kt` module cannot
+   * reach `CallbackContext.invocationContext` (it is `internal`) and therefore cannot terminate the
+   * invocation -- the gap called out in b/522621203.
+   */
+  @Test
+  fun runAsync_beforeModelCallback_endsInvocation_stopsLoop() = runTest {
+    // Model returns a (non-final) function call, so without endInvocation() the loop would run a
+    // second step. The before-model callback ends the invocation, so the loop stops after step 1.
+    val testModel =
+      DummyModel.createSequential(
+        "test-model",
+        listOf(
+          LlmResponse(
+            content =
+              Content(
+                "model",
+                listOf(Part(functionCall = FunctionCall("noop_tool", emptyMap(), id = "call_1"))),
+              )
+          ),
+          LlmResponse(content = modelMessage("This should never be returned.")),
+        ),
+      )
+    val noopTool = DummyTool(name = "noop_tool", onRun = { _, _ -> mapOf("ok" to true) })
+
+    val callback = BeforeModelCallback { ctx, request ->
+      ctx.endInvocation()
+      CallbackChoice.Continue(request)
+    }
+
+    val agent =
+      LlmAgent(
+        name = "test-agent",
+        model = testModel,
+        tools = listOf(noopTool),
+        beforeModelCallbacks = listOf(callback),
+      )
+    val sessionService = InMemorySessionService()
+    val session = sessionService.createSession(SessionKey("app", "user", "test-session"))
+    val context = InvocationContext(agent = agent, session = session, runConfig = null)
+
+    val events = agent.runAsync(context).toList()
+
+    // Exactly one step ran (model call + function response); no second model call.
+    assertEquals(2, events.size)
+    assertFalse(
+      events.any {
+        it.content?.parts?.any { p -> p.text == "This should never be returned." } == true
+      }
+    )
+  }
+
+  /**
+   * AfterToolCallback receives a [ToolContext] (not a [CallbackContext]); it must be able to end
+   * the invocation via [ToolContext.endInvocation], symmetric with the BeforeModelCallback path.
+   */
+  @Test
+  fun runAsync_afterToolCallback_endsInvocation_stopsLoop() = runTest {
+    val contentWithFunctionCall =
+      Content(
+        "model",
+        listOf(Part(functionCall = FunctionCall("my_function", emptyMap(), id = "call_1"))),
+      )
+
+    val testModel =
+      DummyModel.createSequential(
+        "test-model",
+        listOf(
+          LlmResponse(content = contentWithFunctionCall),
+          LlmResponse(content = modelMessage("Unreachable.")),
+        ),
+      )
+
+    val testTool = DummyTool("my_function", onRun = { _, _ -> mapOf("ok" to true) })
+    val callback = AfterToolCallback { ctx, _, _, result ->
+      ctx.endInvocation()
+      result
+    }
+
+    val agent =
+      LlmAgent(
+        name = "test-agent",
+        model = testModel,
+        tools = listOf(testTool),
+        afterToolCallbacks = listOf(callback),
+      )
+    val sessionService = InMemorySessionService()
+    val session = sessionService.createSession(SessionKey("app", "user", "test-session"))
+    val context = InvocationContext(agent = agent, session = session, runConfig = null)
+
+    val events = agent.runAsync(context).toList()
+
+    // First step ran (model call + function response); the loop did not continue to a second
+    // model call -- behavioral evidence that the after-tool callback's `endInvocation()`
+    // stopped the loop.
+    assertEquals(2, events.size)
+  }
+
+  /**
+   * In a resumable invocation, a tool that sets `actions.endOfAgent = true` produces a
+   * function-response event whose `endOfAgent` flag is persisted to session history. On a
+   * subsequent resume, [InvocationContext.populateInvocationAgentStates] walks the history and
+   * marks this agent as ended (`endOfAgents[author] = true`), which causes
+   * `AbstractRunner.runAsync` (line 122) to short-circuit a new invocation that resolves to the
+   * same agent.
+   *
+   * This is intentional but diverges from Python ADK's context-flag path: Python's
+   * `invocation_context.end_invocation = True` only stops the in-progress invocation and does NOT
+   * touch any event's `end_of_agent` field, so it leaves no resume-time footprint. Kotlin tools
+   * that want the Python-compatible "stop just this invocation" behavior should use
+   * [ToolContext.endInvocation] (which sets the context flag) instead of `actions.endOfAgent =
+   * true`. This test pins both halves of that contract so a future change to either side is caught.
+   */
+  @Test
+  fun runAsync_resumableContext_toolSetsEndOfAgent_marksAgentEndedOnResume() = runTest {
+    val contentWithFunctionCall =
+      Content(
+        "model",
+        listOf(Part(functionCall = FunctionCall("stop_tool", emptyMap(), id = "call_1"))),
+      )
+    val testModel =
+      DummyModel.createSequential(
+        "test-model",
+        listOf(LlmResponse(content = contentWithFunctionCall)),
+      )
+    val stopTool =
+      DummyTool(
+        name = "stop_tool",
+        onRun = { ctx, _ ->
+          ctx.actions.endOfAgent = true
+          mapOf("status" to "stopped")
+        },
+      )
+    val agent = LlmAgent(name = "test-agent", model = testModel, tools = listOf(stopTool))
+    val sessionService = InMemorySessionService()
+    val session = sessionService.createSession(SessionKey("app", "user", "test-session"))
+    val context =
+      InvocationContext(
+        agent = agent,
+        session = session,
+        runConfig = null,
+        resumabilityConfig = ResumabilityConfig(isResumable = true),
+        sessionService = sessionService,
+        invocationId = "inv-1",
+      )
+
+    // First invocation: tool sets endOfAgent on the function-response event. Persist each event
+    // so the session reflects what a real runner would have written.
+    val events = mutableListOf<Event>()
+    agent.runAsync(context).collect { event ->
+      val unused = sessionService.appendEvent(context.session, event)
+      events.add(event)
+    }
+
+    // The function-response event carries endOfAgent=true (the tool's mutation propagated to the
+    // event via `buildResponseEvent` which assigns `event.actions = toolContext.actions`).
+    val toolResponseEvent = events.firstOrNull {
+      it.actions.endOfAgent && it.functionResponses().isNotEmpty()
+    }
+    assertNotNull(
+      "expected at least one persisted function-response event with endOfAgent=true",
+      toolResponseEvent,
+    )
+
+    // Now simulate a fresh resume: a new InvocationContext over the same session.
+    val resumeContext =
+      InvocationContext(
+        agent = agent,
+        session = session,
+        runConfig = null,
+        resumabilityConfig = ResumabilityConfig(isResumable = true),
+        sessionService = sessionService,
+        invocationId = "inv-1",
+      )
+    resumeContext.populateInvocationAgentStates()
+
+    // The history's endOfAgent flag from the prior tool call marks this agent as ended -- the
+    // signal that `AbstractRunner.runAsync:122` reads to short-circuit a new invocation for this
+    // agent. This is the divergence from Python's context-flag path (which leaves no footprint).
+    assertEquals(true, resumeContext.endOfAgents["test-agent"])
+  }
 
   private fun createEvent(author: String, text: String): Event {
     return Event(

@@ -51,6 +51,30 @@ class CallbackContext(
   }
 
   /**
+   * Requests the current LLM agent to stop after the current step completes.
+   *
+   * Scope is exactly this LLM agent: the per-step loop in [LlmAgent.executeTurns] exits after the
+   * current step, and this agent's remaining after-agent callbacks (the checks at the end of
+   * [BaseAgent.runAsync]) are skipped.
+   *
+   * The flag does NOT propagate to any other agent. Enclosing workflow agents
+   * ([SequentialAgent], [LoopAgent], [ParallelAgent]) do not read
+   * [InvocationContext.isEndOfInvocation], and each child agent runs under its own context copy
+   * produced by `InvocationContext.forAgent(...)` / branching, so the mutation never reaches the
+   * parent's context. In `Sequential[A, B]`, a callback in `A` calling `endInvocation()` still
+   * lets `B` run. This matches Python ADK (`sequential_agent.py:91-99`, `loop_agent.py:113-122`,
+   * per-agent context copy in `base_agent.py:433`) and Java ADK (`LoopAgent.java:146` ->
+   * `takeUntil(hasEscalateAction)`, per-agent `toBuilder()` in `InvocationContext.java:270`). To
+   * break out of a [LoopAgent], set `EventActions.escalate = true` instead.
+   *
+   * Mirrors Python ADK's `callback_context._invocation_context.end_invocation = True` and Java
+   * ADK's `EventActions.setEndInvocation(true)` / `setEndOfAgent(true)`.
+   */
+  fun endInvocation() {
+    invocationContext.isEndOfInvocation = true
+  }
+
+  /**
    * Triggers memory generation for the current session.
    *
    * This method saves the current session's events to the memory service.

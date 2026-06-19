@@ -27,6 +27,7 @@ import com.google.adk.kt.testing.testSession
 import com.google.adk.kt.types.Content
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
@@ -137,6 +138,23 @@ class CallbackContextTest {
 
     assertEquals(1, memoryService.addedSessions.size)
     assertEquals(session, memoryService.addedSessions[0])
+  }
+
+  @Test
+  fun endInvocation_setsIsEndOfInvocationOnContext() = runBlocking {
+    // Callbacks that live outside the `com.google.adk.kt` module cannot reach
+    // `CallbackContext.invocationContext` directly (it is `internal`). The public
+    // `endInvocation()` helper is the supported way for them to terminate the invocation,
+    // mirroring Python ADK's `callback_context._invocation_context.end_invocation = True` and
+    // Java ADK's `EventActions.setEndInvocation(true)`.
+    val context = testInvocationContext(session = testSession())
+    val callbackContext = context.toCallbackContext()
+
+    assertFalse(context.isEndOfInvocation)
+
+    callbackContext.endInvocation()
+
+    assertTrue(context.isEndOfInvocation)
   }
 
   @Test

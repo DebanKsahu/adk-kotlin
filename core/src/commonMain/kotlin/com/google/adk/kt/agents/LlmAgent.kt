@@ -253,7 +253,7 @@ class LlmAgent(
     // end-of-agent marker so a follow-up `runAsync(newMessage = userFunctionResponse(...))` can
     // resume the same agent. We detect a pause both per-event (during `executeTurns`) and, as a
     // backstop, from the session's last two events afterwards. Mirrors Python ADK
-    // `agents/llm_agent.py:486-505`.
+    // `agents/llm_agent.py:522-541`.
     var shouldPause = false
     executeTurns(context).collect { event ->
       maybeSaveOutputToState(event)
@@ -292,7 +292,11 @@ class LlmAgent(
         logger.debug { "Ending agent execution for $name: reached maxSteps=$maxSteps." }
         break
       }
-    } while (!context.isEndOfInvocation && lastEvent?.isFinalResponse == false)
+    } while (
+      !context.isEndOfInvocation &&
+        lastEvent?.isFinalResponse == false &&
+        lastEvent?.actions?.endOfAgent != true
+    )
   }
 
   /** Materializes the [instruction] for the current turn. */

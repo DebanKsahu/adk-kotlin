@@ -34,6 +34,32 @@ class ToolContext(
   override val context: ReadonlyContext
     get() = invocationContext.toReadonlyContext()
 
+  /**
+   * Requests the current LLM agent to stop after the current step completes.
+   *
+   * Scope is exactly this LLM agent: the per-step loop in
+   * [com.google.adk.kt.agents.LlmAgent.executeTurns] exits after the current step, and this
+   * agent's remaining after-agent callbacks (the checks at the end of
+   * [com.google.adk.kt.agents.BaseAgent.runAsync]) are skipped.
+   *
+   * The flag does NOT propagate to any other agent. Enclosing workflow agents
+   * ([com.google.adk.kt.agents.SequentialAgent], [com.google.adk.kt.agents.LoopAgent],
+   * [com.google.adk.kt.agents.ParallelAgent]) do not read
+   * [InvocationContext.isEndOfInvocation], and each child agent runs under its own context copy
+   * produced by `InvocationContext.forAgent(...)` / branching, so the mutation never reaches the
+   * parent's context. In `Sequential[A, B]`, a tool in `A` calling `endInvocation()` still lets
+   * `B` run. This matches Python and Java ADK. To break out of a
+   * [com.google.adk.kt.agents.LoopAgent], set `actions.escalate = true` instead.
+   *
+   * Mirrors Python ADK's `tool_context._invocation_context.end_invocation = True` and Java ADK's
+   * `toolContext.actions().setEndInvocation(true)`. Tools may equivalently set `actions.endOfAgent
+   * = true`; both paths cause [com.google.adk.kt.agents.LlmAgent.executeTurns] to exit after the
+   * current step.
+   */
+  fun endInvocation() {
+    invocationContext.isEndOfInvocation = true
+  }
+
   fun requestConfirmation(hint: String? = null, payload: Any? = null) {
     if (functionCallId == null) {
       throw IllegalStateException("functionCallId is not set.")
