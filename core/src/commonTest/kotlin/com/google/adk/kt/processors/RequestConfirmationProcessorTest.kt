@@ -448,6 +448,139 @@ class RequestConfirmationProcessorTest {
     assertEquals(originalCallId, response.id)
   }
 
+  @Test
+  fun process_wrappedConfirmationResponse_executesTool() = runTest {
+    // Locks the ADK client/API wire-format compatibility: the client may send the
+    // ToolConfirmation as a JSON string under a single "response" key (mirroring the
+    // Java/Python decoders). The processor must unwrap it; otherwise the confirmation is
+    // dropped and the gated tool is never resumed (b/522629309).
+    val toolName = "risky_tool"
+    var toolRuns = 0
+    val (session, context) =
+      newConfirmationContext(
+        tools =
+          listOf(
+            DummyTool(toolName) { _, _ ->
+              toolRuns++
+              mapOf("status" to "executed")
+            }
+          )
+      )
+    val originalCallId = "orig_1"
+    session.events.add(
+      agentEvent(
+        context.invocationId,
+        synthConfirmationCallPart(
+          synthId = "synth_1",
+          originalToolName = toolName,
+          originalCallId = originalCallId,
+        ),
+      )
+    )
+    session.events.add(
+      userEvent(
+        context.invocationId,
+        userFunctionResponse(
+          name = FunctionCall.REQUEST_CONFIRMATION_FUNCTION_CALL_NAME,
+          id = "synth_1",
+          response =
+            mapOf("response" to """{"confirmed":true,"hint":"approved","payload":{"k":"v"}}"""),
+        ),
+      )
+    )
+
+    val emittedEvents = collectEmittedEvents(context)
+
+    assertEquals(1, toolRuns)
+    val response = singleEmittedFunctionResponse(emittedEvents)
+    assertEquals(toolName, response.name)
+    assertEquals(originalCallId, response.id)
+  }
+
+  @Test
+  fun process_wrappedRejection_isForwardedToReExecution() = runTest {
+    val toolName = "risky_tool"
+    var toolRuns = 0
+    val (session, context) =
+      newConfirmationContext(
+        tools =
+          listOf(
+            DummyTool(toolName) { _, _ ->
+              toolRuns++
+              mapOf("error" to "rejected")
+            }
+          )
+      )
+    val originalCallId = "orig_1"
+    session.events.add(
+      agentEvent(
+        context.invocationId,
+        synthConfirmationCallPart(
+          synthId = "synth_1",
+          originalToolName = toolName,
+          originalCallId = originalCallId,
+        ),
+      )
+    )
+    session.events.add(
+      userEvent(
+        context.invocationId,
+        userFunctionResponse(
+          name = FunctionCall.REQUEST_CONFIRMATION_FUNCTION_CALL_NAME,
+          id = "synth_1",
+          response = mapOf("response" to """{"confirmed":false}"""),
+        ),
+      )
+    )
+
+    val emittedEvents = collectEmittedEvents(context)
+
+    assertEquals(1, toolRuns)
+    val response = singleEmittedFunctionResponse(emittedEvents)
+    assertEquals(originalCallId, response.id)
+  }
+
+  @Test
+  fun process_wrappedInvalidJson_dropsConfirmation() = runTest {
+    val toolName = "risky_tool"
+    var toolRuns = 0
+    val (session, context) =
+      newConfirmationContext(
+        tools =
+          listOf(
+            DummyTool(toolName) { _, _ ->
+              toolRuns++
+              mapOf("status" to "executed")
+            }
+          )
+      )
+    session.events.add(
+      agentEvent(
+        context.invocationId,
+        synthConfirmationCallPart(
+          synthId = "synth_1",
+          originalToolName = toolName,
+          originalCallId = "orig_1",
+        ),
+      )
+    )
+    session.events.add(
+      userEvent(
+        context.invocationId,
+        userFunctionResponse(
+          name = FunctionCall.REQUEST_CONFIRMATION_FUNCTION_CALL_NAME,
+          id = "synth_1",
+          response = mapOf("response" to "not-valid-json"),
+        ),
+      )
+    )
+
+    val emittedEvents = collectEmittedEvents(context)
+
+    assertEquals(0, toolRuns)
+    assertEquals(emptyList(), emittedEvents)
+  }
+
   // -- Helpers -----------------------------------------------------------------------------------
 
   /**
