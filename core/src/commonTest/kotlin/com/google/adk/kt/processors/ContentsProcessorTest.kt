@@ -25,6 +25,7 @@ import com.google.adk.kt.sessions.InMemorySessionService
 import com.google.adk.kt.sessions.SessionKey
 import com.google.adk.kt.testing.DummyAgent
 import com.google.adk.kt.testing.DummyModel
+import com.google.adk.kt.testing.compactionEvent
 import com.google.adk.kt.testing.modelMessage
 import com.google.adk.kt.testing.testSession
 import com.google.adk.kt.testing.userMessage
@@ -1181,6 +1182,242 @@ class ContentsProcessorTest {
 
     val result = request.contents
     assertThat(result).isEmpty()
+  }
+
+  @Test
+  fun process_compactionEvent_replacesCoveredEventsWithSummary() = runTest {
+    val processor = ContentsProcessor()
+    var request = LlmRequest(contents = emptyList())
+    val context =
+      createLlmAgentTestContext(
+        Event(author = "user", content = userMessage("u1"), timestamp = 1L),
+        Event(author = "testAgent", content = modelMessage("m1"), timestamp = 2L),
+        Event(author = "user", content = userMessage("u2"), timestamp = 3L),
+        compactionEvent(startTs = 1L, endTs = 2L, timestamp = 4L, summary = "summary"),
+      )
+
+    request = processor.process(context, request)
+
+    // u1(ts=1) and m1(ts=2) fall in [1,2] -> replaced by the summary (at ts=2); u2(ts=3) is kept.
+    assertThat(request.contents.map { it.parts.firstOrNull()?.text })
+      .containsExactly("summary", "u2")
+      .inOrder()
+  }
+
+  @Test
+  fun process_nestedCompactions_keepsOnlyOuterSummary() = runTest {
+    val processor = ContentsProcessor()
+    var request = LlmRequest(contents = emptyList())
+    val context =
+      createLlmAgentTestContext(
+        Event(author = "user", content = userMessage("u1"), timestamp = 1L),
+        Event(author = "testAgent", content = modelMessage("m1"), timestamp = 2L),
+        Event(author = "user", content = userMessage("u2"), timestamp = 3L),
+        Event(author = "testAgent", content = modelMessage("m2"), timestamp = 4L),
+        compactionEvent(startTs = 1L, endTs = 2L, timestamp = 5L, summary = "inner"),
+        compactionEvent(startTs = 1L, endTs = 4L, timestamp = 6L, summary = "outer"),
+        Event(author = "user", content = userMessage("u3"), timestamp = 7L),
+      )
+
+    request = processor.process(context, request)
+
+    // [1,2] is contained in [1,4], so only "outer" survives (covering u1..m2); u3 is kept.
+    assertThat(request.contents.map { it.parts.firstOrNull()?.text })
+      .containsExactly("outer", "u3")
+      .inOrder()
+  }
+
+  @Test
+  fun process_partiallyOverlappingCompactions_keepsBoth() = runTest {
+    val processor = ContentsProcessor()
+    var request = LlmRequest(contents = emptyList())
+    val context =
+      createLlmAgentTestContext(
+        Event(author = "user", content = userMessage("u1"), timestamp = 1L),
+        Event(author = "testAgent", content = modelMessage("m1"), timestamp = 2L),
+        Event(author = "user", content = userMessage("u2"), timestamp = 3L),
+        Event(author = "testAgent", content = modelMessage("m2"), timestamp = 4L),
+        compactionEvent(startTs = 1L, endTs = 2L, timestamp = 5L, summary = "first"),
+        compactionEvent(startTs = 2L, endTs = 4L, timestamp = 6L, summary = "second"),
+        Event(author = "user", content = userMessage("u3"), timestamp = 7L),
+      )
+
+    request = processor.process(context, request)
+
+    // [1,2] and [2,4] overlap but neither contains the other, so both summaries are kept.
+    assertThat(request.contents.map { it.parts.firstOrNull()?.text })
+      .containsExactly("first", "second", "u3")
+      .inOrder()
+  }
+
+  @Test
+  fun process_noCompaction_returnsEventsUnchanged() = runTest {
+    val processor = ContentsProcessor()
+    var request = LlmRequest(contents = emptyList())
+    val context =
+      createLlmAgentTestContext(
+        Event(author = "user", content = userMessage("u1"), timestamp = 1L),
+        Event(author = "testAgent", content = modelMessage("m1"), timestamp = 2L),
+        Event(author = "user", content = userMessage("u2"), timestamp = 3L),
+      )
+
+    request = processor.process(context, request)
+
+    assertThat(request.contents.map { it.parts.firstOrNull()?.text })
+      .containsExactly("u1", "m1", "u2")
+      .inOrder()
+  }
+
+  @Test
+  fun process_noCompaction_preservesOriginalEventOrder() = runTest {
+    val processor = ContentsProcessor()
+    var request = LlmRequest(contents = emptyList())
+    val context =
+      createLlmAgentTestContext(
+        Event(author = "user", content = userMessage("first"), timestamp = 2L),
+        Event(author = "testAgent", content = modelMessage("second"), timestamp = 1L),
+      )
+
+    request = processor.process(context, request)
+
+    assertThat(request.contents.map { it.parts.firstOrNull()?.text })
+      .containsExactly("first", "second")
+      .inOrder()
+  }
+
+  @Test
+  fun process_compactionAtBeginning_keepsLaterEvents() = runTest {
+    val processor = ContentsProcessor()
+    var request = LlmRequest(contents = emptyList())
+    val context =
+      createLlmAgentTestContext(
+        compactionEvent(startTs = 1L, endTs = 2L, timestamp = 2L, summary = "summary"),
+        Event(author = "user", content = userMessage("u3"), timestamp = 3L),
+        Event(author = "testAgent", content = modelMessage("m4"), timestamp = 4L),
+      )
+
+    request = processor.process(context, request)
+
+    assertThat(request.contents.map { it.parts.firstOrNull()?.text })
+      .containsExactly("summary", "u3", "m4")
+      .inOrder()
+  }
+
+  @Test
+  fun process_compactionAtEnd_keepsEarlierRawEvents() = runTest {
+    val processor = ContentsProcessor()
+    var request = LlmRequest(contents = emptyList())
+    val context =
+      createLlmAgentTestContext(
+        Event(author = "user", content = userMessage("u1"), timestamp = 1L),
+        Event(author = "testAgent", content = modelMessage("m2"), timestamp = 2L),
+        Event(author = "user", content = userMessage("u3"), timestamp = 3L),
+        compactionEvent(startTs = 2L, endTs = 3L, timestamp = 4L, summary = "summary"),
+      )
+
+    request = processor.process(context, request)
+
+    assertThat(request.contents.map { it.parts.firstOrNull()?.text })
+      .containsExactly("u1", "summary")
+      .inOrder()
+  }
+
+  @Test
+  fun process_twoAdjacentCompactions_keepBothSummaries() = runTest {
+    val processor = ContentsProcessor()
+    var request = LlmRequest(contents = emptyList())
+    val context =
+      createLlmAgentTestContext(
+        Event(author = "user", content = userMessage("u1"), timestamp = 1L),
+        Event(author = "testAgent", content = modelMessage("m2"), timestamp = 2L),
+        compactionEvent(startTs = 1L, endTs = 2L, timestamp = 2L, summary = "summary1to2"),
+        Event(author = "user", content = userMessage("u3"), timestamp = 3L),
+        Event(author = "testAgent", content = modelMessage("m4"), timestamp = 4L),
+        compactionEvent(startTs = 3L, endTs = 4L, timestamp = 4L, summary = "summary3to4"),
+        Event(author = "user", content = userMessage("u5"), timestamp = 5L),
+      )
+
+    request = processor.process(context, request)
+
+    // [1,2] and [3,4] each replace their range; u5 (ts=5) is uncovered and kept.
+    assertThat(request.contents.map { it.parts.firstOrNull()?.text })
+      .containsExactly("summary1to2", "summary3to4", "u5")
+      .inOrder()
+  }
+
+  @Test
+  fun process_multipleCompactions_replaceRangesAndKeepRawEventsBetween() = runTest {
+    val processor = ContentsProcessor()
+    var request = LlmRequest(contents = emptyList())
+    val context =
+      createLlmAgentTestContext(
+        Event(author = "user", content = userMessage("e1"), timestamp = 1L),
+        Event(author = "user", content = userMessage("e2"), timestamp = 2L),
+        Event(author = "user", content = userMessage("e3"), timestamp = 3L),
+        Event(author = "user", content = userMessage("e4"), timestamp = 4L),
+        compactionEvent(startTs = 1L, endTs = 4L, timestamp = 4L, summary = "summary1to4"),
+        Event(author = "user", content = userMessage("e5"), timestamp = 5L),
+        Event(author = "user", content = userMessage("e6"), timestamp = 6L),
+        Event(author = "user", content = userMessage("e7"), timestamp = 7L),
+        Event(author = "user", content = userMessage("e8"), timestamp = 8L),
+        Event(author = "user", content = userMessage("e9"), timestamp = 9L),
+        compactionEvent(startTs = 6L, endTs = 9L, timestamp = 9L, summary = "summary6to9"),
+        Event(author = "user", content = userMessage("e10"), timestamp = 10L),
+      )
+
+    request = processor.process(context, request)
+
+    // [1,4] and [6,9] are replaced by their summaries; e5 (gap) and e10 (after) are kept.
+    assertThat(request.contents.map { it.parts.firstOrNull()?.text })
+      .containsExactly("summary1to4", "e5", "summary6to9", "e10")
+      .inOrder()
+  }
+
+  @Test
+  fun process_compactionAppendedLate_keepsNewerEvents() = runTest {
+    val processor = ContentsProcessor()
+    var request = LlmRequest(contents = emptyList())
+    val context =
+      createLlmAgentTestContext(
+        Event(author = "user", content = userMessage("e1"), timestamp = 1L),
+        Event(author = "user", content = userMessage("e2"), timestamp = 2L),
+        Event(author = "user", content = userMessage("e3"), timestamp = 3L),
+        Event(author = "user", content = userMessage("u4"), timestamp = 4L),
+        Event(author = "testAgent", content = modelMessage("m5"), timestamp = 5L),
+        compactionEvent(startTs = 1L, endTs = 3L, timestamp = 6L, summary = "summary1to3"),
+      )
+
+    request = processor.process(context, request)
+
+    // The compaction covers [1,3] but was appended at ts=6; u4,m5 (after the range) survive, and
+    // the summary is positioned at its end timestamp (3) -- ahead of them -- not at the append
+    // time.
+    assertThat(request.contents.map { it.parts.firstOrNull()?.text })
+      .containsExactly("summary1to3", "u4", "m5")
+      .inOrder()
+  }
+
+  @Test
+  fun process_duplicateRangeCompactions_keepsOnlyMostRecentSummary() = runTest {
+    val processor = ContentsProcessor()
+    var request = LlmRequest(contents = emptyList())
+    val context =
+      createLlmAgentTestContext(
+        Event(author = "user", content = userMessage("u1"), timestamp = 1L),
+        Event(author = "testAgent", content = modelMessage("m1"), timestamp = 2L),
+        compactionEvent(startTs = 1L, endTs = 2L, timestamp = 3L, summary = "old_summary"),
+        compactionEvent(startTs = 1L, endTs = 2L, timestamp = 4L, summary = "new_summary"),
+        Event(author = "user", content = userMessage("u2"), timestamp = 5L),
+      )
+
+    request = processor.process(context, request)
+
+    // Two compactions cover the identical range [1,2]; the tie-break keeps only the later one
+    // ("new_summary") and drops the earlier ("old_summary"). Without the tie-break both would be
+    // marked as covering each other and dropped, leaving u1/m1 unsummarized.
+    assertThat(request.contents.map { it.parts.firstOrNull()?.text })
+      .containsExactly("new_summary", "u2")
+      .inOrder()
   }
 
   // Helpers

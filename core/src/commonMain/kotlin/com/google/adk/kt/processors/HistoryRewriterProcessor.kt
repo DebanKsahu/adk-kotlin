@@ -51,23 +51,99 @@ internal class HistoryRewriterProcessor {
       shouldIncludeEventInContext(currentBranch, it)
     }
 
-    // Process events
+    // Process events. Compaction events are kept here (they carry their summary in
+    // actions.compaction rather than content) so processCompactionEvents can expand them below.
     val filteredEvents = rawFilteredEvents.mapNotNull { event ->
       when {
+        event.actions.compaction != null -> event
         event.content == null -> null
         isOtherAgentReply(agentName, event) -> presentOtherAgentMessage(event)
         else -> event
       }
     }
 
+    // Replace each compaction event with its summary and drop the raw events it covers.
+    val eventsWithCompactionApplied =
+      if (filteredEvents.any { it.actions.compaction != null }) {
+        processCompactionEvents(filteredEvents)
+      } else {
+        filteredEvents
+      }
+
     // Rearrange for latest function response (merge scenarios) and async function responses
-    return filteredEvents
+    return eventsWithCompactionApplied
       .let { rearrangeEventsForLatestFunctionResponse(it) }
       .let { rearrangeEventsForAsyncFunctionResponsesInHistory(it) }
       .mapNotNull { event ->
         val content = event.content ?: return@mapNotNull null
         stripClientFunctionCallIds(content)
       }
+  }
+
+  /**
+   * Processes events by applying compaction. Identifies compacted ranges and filters out events
+   * that are covered by compaction summaries.
+   *
+   * @param events The list of events to process.
+   * @return The list of events with compaction applied.
+   */
+  private fun processCompactionEvents(events: List<Event>): List<Event> {
+    // Extract all compaction ranges from the events.
+    val compactionRanges = events.mapIndexedNotNull { index, event ->
+      event.actions.compaction?.let { CompactionRange(index, it.startTimestamp, it.endTimestamp) }
+    }
+    val coveredIndices = coveredCompactionRangeIndices(compactionRanges)
+    val keptCompactionRanges = compactionRanges.filter { it.index !in coveredIndices }
+
+    data class Item(val timestamp: Long, val index: Int, val event: Event)
+
+    val finalItems = mutableListOf<Item>()
+
+    // Pass 1: append all kept compaction events.
+    for (range in keptCompactionRanges) {
+      val compaction = events[range.index].actions.compaction!!
+      finalItems.add(
+        Item(
+          compaction.endTimestamp,
+          range.index,
+          events[range.index].copy(
+            author = Role.MODEL,
+            content = compaction.compactedContent,
+            timestamp = compaction.endTimestamp,
+          ),
+        )
+      )
+    }
+
+    // Pass 2: append raw (non-compaction) events that don't fall into a kept compaction range.
+    finalItems +=
+      events
+        .withIndex()
+        .filter { (_, event) -> event.actions.compaction == null }
+        .filter { (_, event) -> keptCompactionRanges.none { event.timestamp in it.start..it.end } }
+        .map { (index, event) -> Item(event.timestamp, index, event) }
+
+    return finalItems.sortedWith(compareBy({ it.timestamp }, { it.index })).map { it.event }
+  }
+
+  /**
+   * Returns the indices of [ranges] that are fully contained by another range. When two ranges are
+   * identical only the later one is kept; partially overlapping ranges (neither containing the
+   * other) are both kept.
+   */
+  private fun coveredCompactionRangeIndices(ranges: List<CompactionRange>): Set<Int> =
+    ranges.filter { range -> ranges.any { it.covers(range) } }.map { it.index }.toSet()
+
+  private data class CompactionRange(val index: Int, val start: Long, val end: Long) {
+    /**
+     * True if this range fully contains [other] -- strictly larger on at least one side, or
+     * identical but appearing later (so equal ranges keep only the most recent).
+     */
+    fun covers(other: CompactionRange): Boolean =
+      index != other.index &&
+        start <= other.start &&
+        end >= other.end &&
+        (start < other.start || end > other.end || index > other.index)
   }
 
   /**
@@ -193,6 +269,9 @@ internal class HistoryRewriterProcessor {
    * Parts with only thoughts are also considered empty.
    */
   private fun containsEmptyContent(event: Event): Boolean {
+    // Compaction events carry their summary in actions.compaction rather than content; keep them so
+    // processCompactionEvents can expand them into summary content.
+    if (event.actions.compaction != null) return false
 
     val hasContent =
       event.content != null &&
