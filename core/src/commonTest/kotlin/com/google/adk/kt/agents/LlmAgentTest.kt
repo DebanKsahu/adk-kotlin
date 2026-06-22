@@ -459,8 +459,11 @@ class LlmAgentTest {
         resumabilityConfig = ResumabilityConfig(isResumable = true),
         invocationId = invocationId,
       )
-    // Pre-populate the session with a user message and a long-running function-call event from a
-    // prior turn -- this is what the runner would have written before re-entering `runAsyncImpl`.
+    // Pre-populate the session with a user message, a long-running function-call event, and the
+    // tool's empty placeholder function-response -- this is what the runner would have written
+    // before re-entering `runAsyncImpl` on resume. Including the FR avoids the "resumption from
+    // unresolved function-call" branch in `LlmAgentTurn.execute` so the test exercises the
+    // pause-gate-from-history path directly.
     session.events.add(
       Event(
         id = Uuid.random(),
@@ -482,6 +485,25 @@ class LlmAgentTest {
             parts = listOf(Part(functionCall = FunctionCall(name = "do_work", id = callId))),
           ),
         longRunningToolIds = setOf(callId),
+      )
+    )
+    session.events.add(
+      Event(
+        id = Uuid.random(),
+        invocationId = invocationId,
+        author = "test-agent",
+        branch = context.branch,
+        content =
+          Content(
+            role = Role.USER,
+            parts =
+              listOf(
+                Part(
+                  functionResponse =
+                    FunctionResponse(name = "do_work", id = callId, response = emptyMap())
+                )
+              ),
+          ),
       )
     )
 

@@ -665,8 +665,12 @@ class InvocationContextTest {
     }
 
   @Test
-  fun executeSingleFunctionCall_longRunningToolReturnsUnit_returnsNull() = runTest {
-    // `Unit` is the "no response yet" signal for long-running tools: the FR event is suppressed.
+  fun executeSingleFunctionCall_longRunningToolReturnsUnit_buildsEmptyResponseEvent() = runTest {
+    // A long-running tool returning `Unit` (the "no response yet" Kotlin idiom) emits an FR event
+    // with payload `{}`, matching Java's `LongRunningFunctionTool` null/`{}` semantics. The
+    // framework coerces the `Unit` singleton to `emptyMap()` so the wire form never leaks the
+    // Kotlin sentinel as `{result: kotlin.Unit}`. The FC event carries `longRunningToolIds`, so
+    // the agent loop terminates after the FR is emitted.
     val tool = DummyTool(name = "test_tool", isLongRunning = true) { _, _ -> Unit }
 
     val context =
@@ -681,15 +685,17 @@ class InvocationContextTest {
         mapOf("test_tool" to tool),
       )
 
-    assertNull(result)
+    assertNotNull(result)
+    val functionResponse = result!!.content?.parts?.get(0)?.functionResponse
+    assertNotNull(functionResponse)
+    assertEquals(emptyMap<String, Any>(), functionResponse!!.response)
   }
 
   @Test
   fun executeSingleFunctionCall_longRunningToolReturnsEmptyMap_buildsEmptyResponseEvent() =
     runTest {
-      // Empty maps and empty strings are NOT special-cased the way Python ADK does it. They are
-      // taken at face value and yielded as the function-response payload. Users wanting the "no
-      // response" semantic must declare a `Unit` return type.
+      // A long-running tool returning an empty Map emits an FR event with that payload, matching
+      // Java's `LongRunningFunctionTool` semantics.
       val tool =
         DummyTool(name = "test_tool", isLongRunning = true) { _, _ -> emptyMap<String, Any>() }
 
