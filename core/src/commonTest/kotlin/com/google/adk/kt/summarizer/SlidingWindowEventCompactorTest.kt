@@ -27,6 +27,7 @@ import com.google.adk.kt.testing.eventWithFunctionCall
 import com.google.adk.kt.testing.eventWithFunctionResponse
 import com.google.adk.kt.testing.eventWithHitlRequest
 import com.google.adk.kt.testing.modelEvent
+import com.google.adk.kt.testing.rewindEvent
 import com.google.adk.kt.testing.testSession
 import com.google.adk.kt.testing.userEvent
 import kotlin.test.Test
@@ -395,6 +396,63 @@ class SlidingWindowEventCompactorTest {
     // Only the fully-settled first turn is summarized. The call event is excluded because its
     // response is stranded behind the pending HITL; summarizing it would orphan call_1's response.
     assertEquals(listOf(firstUser, firstModel), summarizer.calls.single())
+  }
+
+  @Test
+  fun compact_rewoundInvocation_excludedFromSummary() = runTest {
+    val summarizer = RecordingSummarizer(returning = compactionEvent(startTs = 100L, endTs = 310L))
+    val sessionService = RecordingSessionService()
+    val compactor =
+      SlidingWindowEventCompactor(
+        EventsCompactionConfig(compactionInterval = 2, overlapSize = 1, summarizer = summarizer)
+      )
+    val session = testSession()
+    val firstUser = userEvent("user event to keep", invocationId = "inv_1", timestamp = 100L)
+    val firstModel = modelEvent("model response", invocationId = "inv_1", timestamp = 110L)
+    // inv_2 was rewound by the user; its content must never reach the summarizer.
+    val rewoundUser = userEvent("REWOUND_EVENT", invocationId = "inv_2", timestamp = 200L)
+    val rewoundModel = modelEvent("rewound reply", invocationId = "inv_2", timestamp = 210L)
+    val rewindMarker =
+      rewindEvent(invocationId = "rewind_inv", rewoundInvocationId = "inv_2", timestamp = 220L)
+    val thirdUser = userEvent("user event to keep", invocationId = "inv_3", timestamp = 300L)
+    val thirdModel = modelEvent("model response", invocationId = "inv_3", timestamp = 310L)
+    session.events.addAll(
+      listOf(firstUser, firstModel, rewoundUser, rewoundModel, rewindMarker, thirdUser, thirdModel)
+    )
+
+    compactor.compact(session, sessionService)
+
+    // Only the two live invocations (inv_1, inv_3) are summarized; the rewound invocation and the
+    // rewind marker are dropped before window selection, so the rewound content never leaks.
+    assertEquals(listOf(firstUser, firstModel, thirdUser, thirdModel), summarizer.calls.single())
+    // Raw events stay persisted; compaction reads through rewinds but does not delete history.
+    assertTrue(session.events.containsAll(listOf(rewoundUser, rewoundModel, rewindMarker)))
+  }
+
+  @Test
+  fun compact_rewoundInvocationDoesNotCountTowardThreshold() = runTest {
+    val summarizer = RecordingSummarizer()
+    val sessionService = RecordingSessionService()
+    val compactor =
+      SlidingWindowEventCompactor(
+        EventsCompactionConfig(compactionInterval = 2, overlapSize = 1, summarizer = summarizer)
+      )
+    val session = testSession()
+    // One live invocation plus one rewound invocation: only 1 live invocation < interval (2).
+    session.events.add(userEvent("live", invocationId = "inv_1", timestamp = 100L))
+    session.events.add(modelEvent("ok", invocationId = "inv_1", timestamp = 110L))
+    session.events.add(userEvent("REWOUND_SECRET", invocationId = "inv_2", timestamp = 200L))
+    session.events.add(modelEvent("rewound reply", invocationId = "inv_2", timestamp = 210L))
+    session.events.add(
+      rewindEvent(invocationId = "rewind_inv", rewoundInvocationId = "inv_2", timestamp = 220L)
+    )
+
+    compactor.compact(session, sessionService)
+
+    // Rewound invocations (and the marker) do not count toward the interval, so the threshold is
+    // not met and nothing is summarized.
+    assertTrue(summarizer.calls.isEmpty())
+    assertTrue(sessionService.appended.isEmpty())
   }
 
   @Test

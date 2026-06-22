@@ -86,6 +86,15 @@ fun eventWithHitlRequest(invocationId: String, timestamp: Long, callId: String):
     timestamp = timestamp,
   )
 
+/** A `user`-authored marker [Event] that rewinds history before [rewoundInvocationId]. */
+fun rewindEvent(invocationId: String, rewoundInvocationId: String, timestamp: Long = 0L): Event =
+  Event(
+    author = Role.USER,
+    invocationId = invocationId,
+    actions = EventActions(rewindBeforeInvocationId = rewoundInvocationId),
+    timestamp = timestamp,
+  )
+
 /** An [Event] carrying an [EventCompaction] [summary] spanning [startTs]..[endTs]. */
 fun compactionEvent(
   startTs: Long,

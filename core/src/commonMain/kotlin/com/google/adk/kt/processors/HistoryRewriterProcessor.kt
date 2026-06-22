@@ -17,6 +17,7 @@ package com.google.adk.kt.processors
 
 import com.google.adk.kt.agents.LlmAgent.IncludeContents
 import com.google.adk.kt.events.Event
+import com.google.adk.kt.events.applyRewinds
 import com.google.adk.kt.serialization.Json
 import com.google.adk.kt.types.Content
 import com.google.adk.kt.types.FunctionCall
@@ -90,34 +91,6 @@ internal class HistoryRewriterProcessor {
       }
     }
     return emptyList()
-  }
-
-  /**
-   * Returns [events] with rewound invocations removed.
-   *
-   * Iterates backward. When an event carries `actions.rewindBeforeInvocationId == X`, drops that
-   * event together with every event between it and the earliest event of invocation `X`
-   * (inclusive), then resumes the backward walk from there.
-   */
-  private fun applyRewinds(events: List<Event>): List<Event> {
-    val kept = mutableListOf<Event>()
-    var i = events.size - 1
-    while (i >= 0) {
-      val event = events[i]
-      val rewindInvocationId = event.actions.rewindBeforeInvocationId
-      if (!rewindInvocationId.isNullOrEmpty()) {
-        for (j in 0 until i) {
-          if (events[j].invocationId == rewindInvocationId) {
-            i = j
-            break
-          }
-        }
-      } else {
-        kept.add(event)
-      }
-      i--
-    }
-    return kept.asReversed()
   }
 
   /**
