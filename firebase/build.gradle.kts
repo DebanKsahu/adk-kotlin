@@ -19,6 +19,7 @@ plugins {
   kotlin("plugin.serialization")
   id("org.jetbrains.kotlin.android")
   id("maven-publish")
+  alias(libs.plugins.ksp)
   alias(libs.plugins.gradle.test.retry)
 }
 
@@ -36,6 +37,9 @@ dependencies {
   testImplementation(libs.kotlinx.coroutines.test)
   testImplementation(libs.google.truth)
   testImplementation(libs.robolectric)
+
+  // Generates `@Tool` FunctionTools for the unit tests (e.g. WeatherTools.generatedTools()).
+  add("kspTest", project(":google-adk-kotlin-processor"))
 }
 
 android {
