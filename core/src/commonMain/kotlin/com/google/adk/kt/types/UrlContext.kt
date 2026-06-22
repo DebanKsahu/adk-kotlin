@@ -16,16 +16,5 @@
 
 package com.google.adk.kt.types
 
-/** Represents a GenAI tool definition. */
-data class Tool(
-  /** The function declarations associated with this tool. */
-  val functionDeclarations: List<FunctionDeclaration>? = null,
-  /** A google search tool. */
-  val googleSearch: GoogleSearch? = null,
-  /** A google maps tool. */
-  val googleMaps: GoogleMaps? = null,
-  /** A retrieval tool. */
-  val retrieval: Retrieval? = null,
-  /** A URL context tool. */
-  val urlContext: UrlContext? = null,
-)
+/** Tool to support URL context retrieval. */
+class UrlContext

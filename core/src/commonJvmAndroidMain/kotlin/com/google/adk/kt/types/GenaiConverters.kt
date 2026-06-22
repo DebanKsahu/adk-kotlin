@@ -365,6 +365,14 @@ internal fun Schema.toGenAiSchema(): com.google.genai.types.Schema =
     }
     .build()
 
+// --- UrlContext ---
+/** Converts a [com.google.genai.types.UrlContext] from the GenAI SDK to an ADK [UrlContext]. */
+internal fun com.google.genai.types.UrlContext.fromGenaiSdk(): UrlContext = UrlContext()
+
+/** Converts an ADK [UrlContext] to a [com.google.genai.types.UrlContext] for the GenAI SDK. */
+internal fun UrlContext.toGenaiSdk(): com.google.genai.types.UrlContext =
+  com.google.genai.types.UrlContext.builder().build()
+
 // --- Tool ---
 /** Converts a [com.google.genai.types.Tool] from the GenAI SDK to an ADK [Tool]. */
 internal fun com.google.genai.types.Tool.fromGenaiSdk(): Tool =
@@ -372,6 +380,7 @@ internal fun com.google.genai.types.Tool.fromGenaiSdk(): Tool =
     functionDeclarations = functionDeclarations().getOrNull()?.map { it.fromGenaiSdk() },
     googleSearch = googleSearch().getOrNull()?.fromGenaiSdk(),
     googleMaps = googleMaps().getOrNull()?.fromGenaiSdk(),
+    urlContext = urlContext().getOrNull()?.fromGenaiSdk(),
   )
 
 /** Converts an ADK [Tool] to a [com.google.genai.types.Tool] for the GenAI SDK. */
@@ -383,6 +392,7 @@ internal fun Tool.toGenaiSdk(): com.google.genai.types.Tool =
       }
       this@toGenaiSdk.googleSearch?.let { googleSearch(it.toGenaiSdk()) }
       this@toGenaiSdk.googleMaps?.let { googleMaps(it.toGenaiSdk()) }
+      this@toGenaiSdk.urlContext?.let { urlContext(it.toGenaiSdk()) }
     }
     .build()
 

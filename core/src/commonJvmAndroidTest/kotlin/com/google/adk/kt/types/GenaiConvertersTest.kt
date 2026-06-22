@@ -345,6 +345,17 @@ class GenaiConvertersTest {
   }
 
   @Test
+  fun tool_withUrlContext_convertsCorrectly() {
+    val adkTool = Tool(urlContext = UrlContext())
+
+    val genaiTool = adkTool.toGenaiSdk()
+    assertEquals(true, genaiTool.urlContext().isPresent)
+
+    val convertedBack = genaiTool.fromGenaiSdk()
+    assertNotNull(convertedBack.urlContext)
+  }
+
+  @Test
   fun promptFeedback_convertsCorrectly() {
     val adkPromptFeedback = PromptFeedback(blockReasonMessage = "msg")
     val genaiPromptFeedback = adkPromptFeedback.toGenaiSdk()
