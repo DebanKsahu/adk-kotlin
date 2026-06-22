@@ -20,15 +20,22 @@ package com.google.adk.kt.runners
 
 import com.google.adk.kt.agents.BaseAgent
 import com.google.adk.kt.agents.InvocationContext
+import com.google.adk.kt.agents.LlmAgent
 import com.google.adk.kt.agents.ResumabilityConfig
 import com.google.adk.kt.annotations.ExperimentalResumabilityFeature
+import com.google.adk.kt.apps.App
 import com.google.adk.kt.artifacts.ArtifactService
 import com.google.adk.kt.artifacts.InMemoryArtifactService
 import com.google.adk.kt.events.Event
 import com.google.adk.kt.events.EventActions
+import com.google.adk.kt.models.LlmResponse
 import com.google.adk.kt.sessions.SessionKey
 import com.google.adk.kt.sessions.State
+import com.google.adk.kt.summarizer.EventSummarizer
+import com.google.adk.kt.summarizer.EventsCompactionConfig
 import com.google.adk.kt.testing.DummyAgent
+import com.google.adk.kt.testing.DummyModel
+import com.google.adk.kt.testing.compactionEvent
 import com.google.adk.kt.testing.modelMessage
 import com.google.adk.kt.testing.userFunctionResponse
 import com.google.adk.kt.testing.userMessage
@@ -40,7 +47,11 @@ import com.google.adk.kt.types.Role
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 
 class AbstractRunnerTest {
@@ -685,6 +696,172 @@ class AbstractRunnerTest {
       Part(inlineData = Blob(mimeType = "application/octet-stream", data = ByteArray(0))),
       artifactService.lastSavedArtifact("f1"),
     )
+  }
+
+  // ----- Post-invocation context compaction wiring (configured via App) -----
+
+  @Test
+  fun runAsync_slidingWindowConfigured_compactsAfterInterval() = runTest {
+    val summarizer = RecordingSummarizer(returning = compactionEvent(startTs = 0L, endTs = 0L))
+    val runner =
+      InMemoryRunner(
+        app =
+          App(
+            appName = "test_app",
+            rootAgent = echoAgent(),
+            eventsCompactionConfig =
+              EventsCompactionConfig(
+                compactionInterval = 2,
+                overlapSize = 0,
+                summarizer = summarizer,
+              ),
+          )
+      )
+
+    // The runner exposes its App (read-only); the effective compaction config is read from it.
+    assertEquals(summarizer, runner.app?.eventsCompactionConfig?.summarizer)
+
+    // First invocation: only one completed invocation, below the interval.
+    runner.runAsync(userId = "user", sessionId = "session", newMessage = userMessage("hi")).toList()
+    assertTrue(summarizer.calls.isEmpty())
+
+    // Second invocation: the interval is reached, so compaction fires exactly once over the four
+    // raw events (user + model per invocation) from the two completed invocations.
+    runner
+      .runAsync(userId = "user", sessionId = "session", newMessage = userMessage("hi again"))
+      .toList()
+    assertEquals(1, summarizer.calls.size)
+    assertEquals(4, summarizer.calls.single().size)
+
+    val events =
+      assertNotNull(runner.sessionService.getSession(SessionKey(runner.appName, "user", "session")))
+        .events
+    assertEquals(1, events.count { it.actions.compaction != null })
+  }
+
+  @Test
+  fun runAsync_belowCompactionInterval_doesNotCompact() = runTest {
+    val summarizer = RecordingSummarizer(returning = compactionEvent(startTs = 0L, endTs = 0L))
+    val runner =
+      InMemoryRunner(
+        app =
+          App(
+            appName = "test_app",
+            rootAgent = echoAgent(),
+            eventsCompactionConfig =
+              EventsCompactionConfig(
+                compactionInterval = 3,
+                overlapSize = 0,
+                summarizer = summarizer,
+              ),
+          )
+      )
+
+    runner.runAsync(userId = "user", sessionId = "session", newMessage = userMessage("a")).toList()
+    runner.runAsync(userId = "user", sessionId = "session", newMessage = userMessage("b")).toList()
+
+    assertTrue(summarizer.calls.isEmpty())
+    val events =
+      assertNotNull(runner.sessionService.getSession(SessionKey(runner.appName, "user", "session")))
+        .events
+    assertTrue(events.none { it.actions.compaction != null })
+    // Two invocations, each appending a user and a model event, and no compaction event added.
+    assertEquals(4, events.size)
+  }
+
+  @Test
+  fun runAsync_noCompactionConfig_doesNotCompact() = runTest {
+    val runner = InMemoryRunner(agent = echoAgent())
+
+    runner.runAsync(userId = "user", sessionId = "session", newMessage = userMessage("a")).toList()
+    runner.runAsync(userId = "user", sessionId = "session", newMessage = userMessage("b")).toList()
+
+    val events =
+      assertNotNull(runner.sessionService.getSession(SessionKey(runner.appName, "user", "session")))
+        .events
+    assertTrue(events.none { it.actions.compaction != null })
+  }
+
+  @Test
+  fun construct_slidingWindowWithoutSummarizerAndNonLlmAgentRoot_throws() {
+    assertFailsWith<IllegalArgumentException> {
+      InMemoryRunner(
+        app =
+          App(
+            appName = "test_app",
+            rootAgent = DummyAgent(),
+            eventsCompactionConfig = EventsCompactionConfig(compactionInterval = 2, overlapSize = 0),
+          )
+      )
+    }
+  }
+
+  @Test
+  fun construct_compactionConfigWithoutStrategyAndNonLlmAgentRoot_throws() {
+    // A summarizer is resolved for any compaction config (not only sliding-window), so even a
+    // strategy-less config requires a model and fails fast when the root is not an LlmAgent.
+    assertFailsWith<IllegalArgumentException> {
+      InMemoryRunner(
+        app =
+          App(
+            appName = "test_app",
+            rootAgent = DummyAgent(),
+            eventsCompactionConfig = EventsCompactionConfig(),
+          )
+      )
+    }
+  }
+
+  @Test
+  fun runAsync_defaultSummarizerUsesRootLlmAgentModel() = runTest {
+    // No summarizer supplied: the runner must build a default LlmEventSummarizer from the root
+    // LlmAgent's model, so the compaction summary content comes from that model.
+    val model = DummyModel(name = "model") { flowOf(LlmResponse(content = modelMessage("OK"))) }
+    val runner =
+      InMemoryRunner(
+        app =
+          App(
+            appName = "test_app",
+            rootAgent = LlmAgent(name = "agent", model = model),
+            eventsCompactionConfig = EventsCompactionConfig(compactionInterval = 2, overlapSize = 0),
+          )
+      )
+
+    runner.runAsync(userId = "user", sessionId = "session", newMessage = userMessage("hi")).toList()
+    runner
+      .runAsync(userId = "user", sessionId = "session", newMessage = userMessage("hi again"))
+      .toList()
+
+    val events =
+      assertNotNull(runner.sessionService.getSession(SessionKey(runner.appName, "user", "session")))
+        .events
+    val compaction = events.single { it.actions.compaction != null }
+    assertEquals("OK", compaction.actions.compaction?.compactedContent?.parts?.firstOrNull()?.text)
+  }
+}
+
+/** A [DummyAgent] that emits one model [Event] tagged with the current invocation id per turn. */
+private fun echoAgent(name: String = "agent"): DummyAgent =
+  DummyAgent(name = name) { context ->
+    emit(
+      Event(
+        author = Role.MODEL,
+        invocationId = context.invocationId,
+        content = modelMessage("resp"),
+      )
+    )
+  }
+
+/**
+ * An [EventSummarizer] that records every event list passed to [summarizeEvents] in [calls] and
+ * returns the preconfigured [returning] event.
+ */
+private class RecordingSummarizer(private val returning: Event? = null) : EventSummarizer {
+  val calls: MutableList<List<Event>> = mutableListOf()
+
+  override suspend fun summarizeEvents(events: List<Event>): Event? {
+    calls.add(events.toList())
+    return returning
   }
 }
 

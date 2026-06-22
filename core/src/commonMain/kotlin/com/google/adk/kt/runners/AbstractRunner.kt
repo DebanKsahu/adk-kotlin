@@ -20,6 +20,7 @@ package com.google.adk.kt.runners
 
 import com.google.adk.kt.agents.BaseAgent
 import com.google.adk.kt.agents.InvocationContext
+import com.google.adk.kt.agents.LlmAgent
 import com.google.adk.kt.agents.ResumabilityConfig
 import com.google.adk.kt.agents.RunConfig
 import com.google.adk.kt.agents.findAgent
@@ -41,6 +42,9 @@ import com.google.adk.kt.sessions.Session
 import com.google.adk.kt.sessions.SessionKey
 import com.google.adk.kt.sessions.SessionService
 import com.google.adk.kt.sessions.State
+import com.google.adk.kt.summarizer.EventsCompactionConfig
+import com.google.adk.kt.summarizer.LlmEventSummarizer
+import com.google.adk.kt.summarizer.SlidingWindowEventCompactor
 import com.google.adk.kt.telemetry.trace
 import com.google.adk.kt.types.Blob
 import com.google.adk.kt.types.Content
@@ -53,23 +57,43 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 
-/**
- * An abstract base class for [Runner] implementations that provides common orchestration logic.
- *
- * Subclasses may be constructed either from explicit fields or from an [App] (via the [App]-based
- * constructor), which supplies the [App.appName] and [App.rootAgent].
- */
-abstract class AbstractRunner(
-  override val appName: String,
-  override val agent: BaseAgent,
-  override val sessionService: SessionService,
-  override val artifactService: ArtifactService?,
-  override val memoryService: MemoryService?,
-  override val pluginManager: PluginManager,
-  override val resumabilityConfig: ResumabilityConfig = ResumabilityConfig(),
-) : Runner {
+/** An abstract base class for [Runner] implementations that provides common orchestration logic. */
+abstract class AbstractRunner : Runner {
 
-  /** Creates a runner from an [App], taking its [App.appName] and [App.rootAgent]. */
+  val app: App?
+  final override val appName: String
+  final override val agent: BaseAgent
+  final override val sessionService: SessionService
+  final override val artifactService: ArtifactService?
+  final override val memoryService: MemoryService?
+  final override val pluginManager: PluginManager
+  final override val resumabilityConfig: ResumabilityConfig
+
+  /** Creates a runner from explicit fields, not using an [App]. */
+  constructor(
+    appName: String,
+    agent: BaseAgent,
+    sessionService: SessionService,
+    artifactService: ArtifactService?,
+    memoryService: MemoryService?,
+    pluginManager: PluginManager,
+    resumabilityConfig: ResumabilityConfig = ResumabilityConfig(),
+  ) {
+    this.appName = appName
+    this.agent = agent
+    this.sessionService = sessionService
+    this.artifactService = artifactService
+    this.memoryService = memoryService
+    this.pluginManager = pluginManager
+    this.resumabilityConfig = resumabilityConfig
+    this.app = null
+  }
+
+  /**
+   * Creates a runner from an [App]. The compaction config is resolved at construction (failing fast
+   * if a default summarizer is required but the root agent is not an [LlmAgent]) and stored back on
+   * the [app], so [App.eventsCompactionConfig] returns the effective config.
+   */
   constructor(
     app: App,
     sessionService: SessionService,
@@ -77,15 +101,20 @@ abstract class AbstractRunner(
     memoryService: MemoryService?,
     pluginManager: PluginManager,
     resumabilityConfig: ResumabilityConfig = ResumabilityConfig(),
-  ) : this(
-    app.appName,
-    app.rootAgent,
-    sessionService,
-    artifactService,
-    memoryService,
-    pluginManager,
-    resumabilityConfig,
-  )
+  ) {
+    this.appName = app.appName
+    this.agent = app.rootAgent
+    this.sessionService = sessionService
+    this.artifactService = artifactService
+    this.memoryService = memoryService
+    this.pluginManager = pluginManager
+    this.resumabilityConfig = resumabilityConfig
+    this.app =
+      app.copy(
+        eventsCompactionConfig =
+          resolveEventsCompactionConfig(app.rootAgent, app.eventsCompactionConfig)
+      )
+  }
 
   /**
    * Main entry method to run the agent in this runner.
@@ -125,6 +154,10 @@ abstract class AbstractRunner(
 
         // 4. Run agent with plugins
         emitAll(runAgentWithPlugins(context))
+
+        // 5. Post-invocation context compaction. Runs once the agent has finished emitting and all
+        // its events have been appended to `session`.
+        runPostInvocationCompaction(session)
       }
       .trace("invocation")
 
@@ -680,7 +713,38 @@ abstract class AbstractRunner(
     return "e-" + Uuid.random()
   }
 
+  /**
+   * Runs post-invocation sliding-window context compaction over [session] when configured. A no-op
+   * when no compaction config was supplied or sliding-window compaction is not configured. The
+   * compactor appends a single summary [Event] to [session] (via [sessionService]) when the
+   * configured invocation interval is reached.
+   */
+  private suspend fun runPostInvocationCompaction(session: Session) {
+    val config = app?.eventsCompactionConfig ?: return
+    if (!config.hasSlidingWindowConfig()) return
+    SlidingWindowEventCompactor(config).compact(session, sessionService)
+  }
+
   private companion object {
     private val logger = LoggerFactory.getLogger(AbstractRunner::class)
+
+    /**
+     * Returns [config] with a default [LlmEventSummarizer] injected when compaction is configured
+     * but no summarizer was supplied. The default summarizer uses [rootAgent]'s model, so
+     * [rootAgent] must be an [LlmAgent] in that case; otherwise an [IllegalArgumentException] is
+     * thrown. Returns [config] unchanged when it is `null` or already carries a summarizer. Any
+     * configured compaction strategy needs a summarizer, so this does not depend on which strategy
+     * is set.
+     */
+    private fun resolveEventsCompactionConfig(
+      rootAgent: BaseAgent,
+      config: EventsCompactionConfig?,
+    ): EventsCompactionConfig? {
+      if (config == null || config.summarizer != null) return config
+      val model =
+        (rootAgent as? LlmAgent)?.model
+          ?: throw IllegalArgumentException("No BaseLlm model available for event compaction")
+      return config.copy(summarizer = LlmEventSummarizer(model))
+    }
   }
 }

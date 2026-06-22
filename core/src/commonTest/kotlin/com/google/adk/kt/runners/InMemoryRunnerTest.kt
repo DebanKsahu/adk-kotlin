@@ -26,11 +26,19 @@ import com.google.adk.kt.annotations.ExperimentalResumabilityFeature
 import com.google.adk.kt.apps.App
 import com.google.adk.kt.events.Event
 import com.google.adk.kt.events.EventActions
+import com.google.adk.kt.models.LlmRequest
 import com.google.adk.kt.models.LlmResponse
+import com.google.adk.kt.sessions.InMemorySessionService
+import com.google.adk.kt.sessions.Session
 import com.google.adk.kt.sessions.SessionKey
+import com.google.adk.kt.sessions.SessionService
 import com.google.adk.kt.sessions.State
+import com.google.adk.kt.summarizer.EventSummarizer
+import com.google.adk.kt.summarizer.EventsCompactionConfig
+import com.google.adk.kt.summarizer.LlmEventSummarizer
 import com.google.adk.kt.testing.DummyAgent
 import com.google.adk.kt.testing.DummyModel
+import com.google.adk.kt.testing.compactionEvent
 import com.google.adk.kt.testing.modelMessage
 import com.google.adk.kt.testing.simplifyEvents
 import com.google.adk.kt.testing.userMessage
@@ -72,6 +80,81 @@ class InMemoryRunnerTest {
     val sessionEvents =
       runner.sessionService.getSession(SessionKey("dummy_app", "user1", "session1"))!!.events
     assertThat(sessionEvents.map { it.author }).containsExactly(Role.USER, Role.MODEL).inOrder()
+  }
+
+  @Test
+  fun runAsync_constructedFromApp_wiresCompactionConfig() = runTest {
+    val summarizer = RecordingEventSummarizer()
+    val app =
+      App(
+        appName = "compaction_app",
+        rootAgent = DummyAgent(name = "agent"),
+        eventsCompactionConfig =
+          EventsCompactionConfig(compactionInterval = 1, overlapSize = 0, summarizer = summarizer),
+      )
+    val runner = InMemoryRunner(app = app)
+
+    runner
+      .runAsync(userId = "user1", sessionId = "session1", newMessage = userMessage("hi"))
+      .toList()
+
+    assertThat(runner.appName).isEqualTo("compaction_app")
+    assertThat(summarizer.calls).hasSize(1)
+    val events =
+      runner.sessionService.getSession(SessionKey(runner.appName, "user1", "session1"))!!.events
+    assertThat(events.any { it.actions.compaction != null }).isTrue()
+  }
+
+  /**
+   * Full end-to-end of sliding-window compaction through [InMemoryRunner.runAsync]: turn 1 triggers
+   * post-invocation compaction, and turn 2's prompt to the LLM shows the resulting summary in place
+   * of turn 1's raw messages. Uses [MonotonicTimestampSessionService] so event ordering doesn't
+   * depend on the wall clock (see that class for why the Android variant needs it).
+   */
+  @Test
+  fun runAsync_compactionEndToEnd_summaryFromTurnOneReplacesHistoryInNextPrompt() = runTest {
+    val agentPrompts = mutableListOf<LlmRequest>()
+    // The agent's model records every prompt it receives and returns a canned answer.
+    val agentModel =
+      DummyModel(name = "agent-model") { request ->
+        agentPrompts += request
+        flowOf(LlmResponse(content = modelMessage("answer")))
+      }
+    // The compaction summarizer's model returns a recognizable summary sentinel.
+    val summarizerModel =
+      DummyModel(name = "summarizer-model") {
+        flowOf(LlmResponse(content = modelMessage("SUMMARY_OF_EARLIER_TURNS")))
+      }
+    val runner =
+      InMemoryRunner(
+        app =
+          App(
+            appName = "compaction_app",
+            rootAgent = LlmAgent(name = "agent", model = agentModel),
+            eventsCompactionConfig =
+              EventsCompactionConfig(
+                compactionInterval = 1,
+                overlapSize = 0,
+                summarizer = LlmEventSummarizer(summarizerModel),
+              ),
+          ),
+        sessionService = MonotonicTimestampSessionService(),
+      )
+
+    // Turn 1: post-invocation compaction fires and summarizes this turn.
+    runner
+      .runAsync(userId = "user", sessionId = "session", newMessage = userMessage("first question"))
+      .toList()
+    // Turn 2: its prompt should now show the summary instead of turn 1's raw messages.
+    runner
+      .runAsync(userId = "user", sessionId = "session", newMessage = userMessage("second question"))
+      .toList()
+
+    val turn2Prompt =
+      agentPrompts.last().contents.flatMap { it.parts }.mapNotNull { it.text }.joinToString("\n")
+    assertThat(turn2Prompt).contains("SUMMARY_OF_EARLIER_TURNS")
+    assertThat(turn2Prompt).contains("second question")
+    assertThat(turn2Prompt).doesNotContain("first question")
   }
 
   @Test
@@ -345,15 +428,14 @@ class InMemoryRunnerTest {
         ),
       )
 
-    val events =
-      runner
-        .runAsync(
-          userId = "user1",
-          sessionId = "session1",
-          invocationId = "test-inv",
-          newMessage = userMessage("New message"),
-        )
-        .toList()
+    runner
+      .runAsync(
+        userId = "user1",
+        sessionId = "session1",
+        invocationId = "test-inv",
+        newMessage = userMessage("New message"),
+      )
+      .toList()
 
     val allSessionEvents =
       runner.sessionService.getSession(SessionKey(runner.appName, "user1", "session1"))!!.events
@@ -361,4 +443,38 @@ class InMemoryRunnerTest {
     assertThat(allSessionEvents.size).isEqualTo(2)
     assertThat(allSessionEvents.last().content?.parts?.get(0)?.text).isEqualTo("New message")
   }
+}
+
+/**
+ * An [EventSummarizer] that records every event list passed to [summarizeEvents] in [calls] and
+ * returns a fixed compaction [Event].
+ */
+private class RecordingEventSummarizer(
+  private val returning: Event = compactionEvent(startTs = 0L, endTs = 0L)
+) : EventSummarizer {
+  val calls: MutableList<List<Event>> = mutableListOf()
+
+  override suspend fun summarizeEvents(events: List<Event>): Event {
+    calls.add(events.toList())
+    return returning
+  }
+}
+
+/**
+ * A [SessionService] that stamps each appended event with a strictly increasing timestamp.
+ *
+ * [Event.timestamp] defaults to the wall clock, and compaction uses those timestamps to decide
+ * which events a summary covers. Under Robolectric (the Android unit-test runtime) the clock is
+ * frozen, so every event gets the *same* timestamp: the compaction range collapses to a single
+ * point that also covers the next turn's message, which then gets compacted away and breaks the
+ * assertions. (On the JVM the real clock advances, so this passes there.) Assigning monotonic
+ * timestamps makes the runner-driven compaction test deterministic on every platform.
+ */
+private class MonotonicTimestampSessionService(
+  private val delegate: SessionService = InMemorySessionService()
+) : SessionService by delegate {
+  private var nextTimestamp = 1L
+
+  override suspend fun appendEvent(session: Session, event: Event): Event =
+    delegate.appendEvent(session, event.copy(timestamp = nextTimestamp++))
 }
