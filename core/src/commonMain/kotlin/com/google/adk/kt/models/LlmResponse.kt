@@ -38,6 +38,9 @@ import com.google.adk.kt.types.UsageMetadata
  * @property modelVersion The model version used to generate the response.
  * @property citationMetadata The citation metadata of the response.
  * @property groundingMetadata The grounding metadata of the response.
+ * @property errorCode Error code if the response is an error. The code varies by model.
+ * @property customMetadata Optional key-value pairs labeling the response. The entire map must be
+ *   JSON serializable.
  */
 data class LlmResponse(
   val content: Content? = null,
@@ -49,6 +52,8 @@ data class LlmResponse(
   val modelVersion: String? = null,
   val citationMetadata: CitationMetadata? = null,
   val groundingMetadata: GroundingMetadata? = null,
+  val errorCode: String? = null,
+  val customMetadata: Map<String, Any?>? = null,
 ) {
   companion object {
     /**
@@ -66,6 +71,7 @@ data class LlmResponse(
         content = candidate?.content,
         usageMetadata = response.usageMetadata,
         finishReason = finishReason,
+        errorCode = finishReason?.takeIf { it != FinishReason.STOP }?.name,
         errorMessage =
           if (finishReason == FinishReason.STOP) {
             null

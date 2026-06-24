@@ -25,6 +25,7 @@ import com.google.adk.kt.types.GenerateContentResponse
 import com.google.adk.kt.types.PromptFeedback
 import com.google.adk.kt.types.Role
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.junit.runners.JUnit4
@@ -49,6 +50,7 @@ class LlmResponseTest {
     val llmResponse = LlmResponse.from(response)
 
     assertEquals("Response text", llmResponse.content?.parts?.get(0)?.text)
+    assertNull(llmResponse.errorCode)
   }
 
   @Test
@@ -68,6 +70,7 @@ class LlmResponseTest {
     val llmResponse = LlmResponse.from(response)
 
     assertEquals(FinishReason.SAFETY, llmResponse.finishReason)
+    assertEquals("SAFETY", llmResponse.errorCode)
     assertEquals("Safety filter triggered", llmResponse.errorMessage)
   }
 
@@ -85,6 +88,7 @@ class LlmResponseTest {
     val llmResponse = LlmResponse.from(response)
 
     assertEquals(FinishReason.SAFETY, llmResponse.finishReason)
+    assertEquals("SAFETY", llmResponse.errorCode)
     assertEquals("Prompt blocked for safety", llmResponse.errorMessage)
   }
 
@@ -100,5 +104,16 @@ class LlmResponseTest {
       )
     val llmResponse = LlmResponse.from(response)
     assertEquals("gemini-2.0-flash", llmResponse.modelVersion)
+  }
+
+  @Test
+  fun testCustomMetadata() {
+    val llmResponse =
+      LlmResponse(
+        content = modelMessage("Response text"),
+        customMetadata = mapOf("label" to "experiment-a"),
+      )
+
+    assertEquals("experiment-a", llmResponse.customMetadata?.get("label"))
   }
 }

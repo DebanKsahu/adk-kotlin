@@ -120,6 +120,7 @@ internal class StreamingResponseAggregator {
       content = Content(role = Role.MODEL, parts = partsSequence.toList()),
       usageMetadata = usageMetadata,
       finishReason = finalFinishReason,
+      errorCode = finalFinishReason?.takeIf { it != FinishReason.STOP }?.name,
       errorMessage = if (finalFinishReason == FinishReason.STOP) null else candidate.finishMessage,
       partial = false,
       modelVersion = currentResponse.modelVersion,
