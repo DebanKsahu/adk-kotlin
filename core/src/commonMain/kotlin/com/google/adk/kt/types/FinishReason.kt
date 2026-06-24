@@ -16,10 +16,16 @@
 
 package com.google.adk.kt.types
 
+import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.descriptors.PrimitiveKind
+import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
 
 /** The reason why the generation finished. */
-@Serializable
+@Serializable(with = FinishReasonSerializer::class)
 enum class FinishReason {
   /** The finish reason is unspecified. */
   FINISH_REASON_UNSPECIFIED,
@@ -59,4 +65,35 @@ enum class FinishReason {
 
   /** A tool returned an unexpected result, or a tool threw an exception. */
   UNEXPECTED_TOOL_CALL,
+
+  /** Token generation stopped because of using an unsupported language. */
+  LANGUAGE,
+
+  /** Token generation stopped because generated images have safety violations. */
+  IMAGE_SAFETY,
+
+  /** Image generation stopped because the generated images have prohibited content. */
+  IMAGE_PROHIBITED_CONTENT,
+
+  /** The model was expected to generate an image, but none was generated. */
+  NO_IMAGE,
+
+  /** Image generation stopped because the generated image may be a recitation from a source. */
+  IMAGE_RECITATION,
+
+  /** Image generation stopped for a reason not otherwise specified. */
+  IMAGE_OTHER,
+}
+
+/** Serializes [FinishReason] by name, decoding unknown values to [FinishReason.OTHER]. */
+internal object FinishReasonSerializer : KSerializer<FinishReason> {
+  override val descriptor: SerialDescriptor =
+    PrimitiveSerialDescriptor("com.google.adk.kt.types.FinishReason", PrimitiveKind.STRING)
+
+  override fun serialize(encoder: Encoder, value: FinishReason) {
+    encoder.encodeString(value.name)
+  }
+
+  override fun deserialize(decoder: Decoder): FinishReason =
+    runCatching { FinishReason.valueOf(decoder.decodeString()) }.getOrDefault(FinishReason.OTHER)
 }
