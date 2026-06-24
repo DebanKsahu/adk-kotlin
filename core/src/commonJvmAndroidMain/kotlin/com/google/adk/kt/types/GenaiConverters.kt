@@ -396,6 +396,29 @@ internal fun Tool.toGenaiSdk(): com.google.genai.types.Tool =
     }
     .build()
 
+// --- ModalityTokenCount ---
+/**
+ * Converts a [com.google.genai.types.ModalityTokenCount] from the GenAI SDK to an ADK
+ * [ModalityTokenCount].
+ */
+internal fun com.google.genai.types.ModalityTokenCount.fromGenaiSdk(): ModalityTokenCount =
+  ModalityTokenCount(
+    modality = modality().getOrNull()?.toKt(),
+    tokenCount = tokenCount().getOrNull(),
+  )
+
+/**
+ * Converts an ADK [ModalityTokenCount] to a [com.google.genai.types.ModalityTokenCount] for the
+ * GenAI SDK.
+ */
+internal fun ModalityTokenCount.toGenaiSdk(): com.google.genai.types.ModalityTokenCount =
+  com.google.genai.types.ModalityTokenCount.builder()
+    .apply {
+      this@toGenaiSdk.modality?.let { modality(it.toJava()) }
+      this@toGenaiSdk.tokenCount?.let { tokenCount(it) }
+    }
+    .build()
+
 // --- UsageMetadata ---
 /**
  * Converts a [com.google.genai.types.GenerateContentResponseUsageMetadata] from the GenAI SDK to an
@@ -407,6 +430,10 @@ internal fun com.google.genai.types.GenerateContentResponseUsageMetadata.fromGen
     promptTokenCount = promptTokenCount().getOrNull(),
     candidatesTokenCount = candidatesTokenCount().getOrNull(),
     totalTokenCount = totalTokenCount().getOrNull(),
+    thoughtsTokenCount = thoughtsTokenCount().getOrNull(),
+    toolUsePromptTokenCount = toolUsePromptTokenCount().getOrNull(),
+    promptTokensDetails = promptTokensDetails().getOrNull()?.map { it.fromGenaiSdk() },
+    candidatesTokensDetails = candidatesTokensDetails().getOrNull()?.map { it.fromGenaiSdk() },
   )
 
 /**
@@ -420,6 +447,14 @@ internal fun UsageMetadata.toGenaiSdk():
       this@toGenaiSdk.promptTokenCount?.let { promptTokenCount(it) }
       this@toGenaiSdk.candidatesTokenCount?.let { candidatesTokenCount(it) }
       this@toGenaiSdk.totalTokenCount?.let { totalTokenCount(it) }
+      this@toGenaiSdk.thoughtsTokenCount?.let { thoughtsTokenCount(it) }
+      this@toGenaiSdk.toolUsePromptTokenCount?.let { toolUsePromptTokenCount(it) }
+      this@toGenaiSdk.promptTokensDetails?.let {
+        promptTokensDetails(it.map { d -> d.toGenaiSdk() })
+      }
+      this@toGenaiSdk.candidatesTokensDetails?.let {
+        candidatesTokensDetails(it.map { d -> d.toGenaiSdk() })
+      }
     }
     .build()
 

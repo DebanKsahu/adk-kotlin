@@ -27,4 +27,12 @@ data class UsageMetadata(
   val candidatesTokenCount: Int? = null,
   /** The total number of tokens. */
   val totalTokenCount: Int? = null,
+  /** The number of tokens that were part of the model's "thoughts" output, for thinking models. */
+  val thoughtsTokenCount: Int? = null,
+  /** The number of tokens in tool-execution results provided back to the model as input. */
+  val toolUsePromptTokenCount: Int? = null,
+  /** A per-modality breakdown of the prompt token count. */
+  val promptTokensDetails: List<ModalityTokenCount>? = null,
+  /** A per-modality breakdown of the candidates token count. */
+  val candidatesTokensDetails: List<ModalityTokenCount>? = null,
 )

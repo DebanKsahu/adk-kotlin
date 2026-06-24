@@ -385,11 +385,23 @@ class GenaiConvertersTest {
   @Test
   fun usageMetadata_convertsCorrectly() {
     val adkUsageMetadata =
-      UsageMetadata(promptTokenCount = 1, candidatesTokenCount = 2, totalTokenCount = 3)
+      UsageMetadata(
+        promptTokenCount = 1,
+        candidatesTokenCount = 2,
+        totalTokenCount = 3,
+        thoughtsTokenCount = 4,
+        toolUsePromptTokenCount = 5,
+        promptTokensDetails =
+          listOf(ModalityTokenCount(modality = MediaModality.TEXT, tokenCount = 1)),
+        candidatesTokensDetails =
+          listOf(ModalityTokenCount(modality = MediaModality.IMAGE, tokenCount = 2)),
+      )
     val genaiUsageMetadata = adkUsageMetadata.toGenaiSdk()
     assertEquals(1, genaiUsageMetadata.promptTokenCount().get())
     assertEquals(2, genaiUsageMetadata.candidatesTokenCount().get())
     assertEquals(3, genaiUsageMetadata.totalTokenCount().get())
+    assertEquals(4, genaiUsageMetadata.thoughtsTokenCount().get())
+    assertEquals(5, genaiUsageMetadata.toolUsePromptTokenCount().get())
 
     val convertedBack = genaiUsageMetadata.fromGenaiSdk()
     assertEquals(adkUsageMetadata, convertedBack)

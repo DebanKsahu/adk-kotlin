@@ -65,3 +65,16 @@ internal fun com.google.genai.types.ThinkingLevel.toKt(): ThinkingLevel =
  */
 internal fun ThinkingLevel.toJava(): com.google.genai.types.ThinkingLevel =
   com.google.genai.types.ThinkingLevel(this.name)
+
+/**
+ * Converts a [com.google.genai.types.MediaModality] from the GenAI SDK to an ADK [MediaModality].
+ */
+internal fun com.google.genai.types.MediaModality.toKt(): MediaModality =
+  runCatching { MediaModality.valueOf(this.toString()) }
+    .getOrDefault(MediaModality.MODALITY_UNSPECIFIED)
+
+/**
+ * Converts an ADK [MediaModality] to a [com.google.genai.types.MediaModality] for the GenAI SDK.
+ */
+internal fun MediaModality.toJava(): com.google.genai.types.MediaModality =
+  com.google.genai.types.MediaModality(this.name)
