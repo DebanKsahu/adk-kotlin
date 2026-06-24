@@ -33,6 +33,7 @@ class InMemoryMemoryService : MemoryService {
 
   private val mutex = Mutex()
   private val sessionEvents = mutableMapOf<UserKey, MutableMap<String, List<Event>>>()
+  private val memories = mutableMapOf<UserKey, List<MemoryEntry>>()
 
   override suspend fun addSessionToMemory(session: Session) = mutex.withLock {
     val key = UserKey(session.key.appName, session.key.userId)
@@ -74,13 +75,25 @@ class InMemoryMemoryService : MemoryService {
     userSessions[scopedSessionId] = existingEvents
   }
 
+  override suspend fun addMemory(
+    appName: String,
+    userId: String,
+    memories: List<MemoryEntry>,
+    customMetadata: Map<String, Any?>?,
+  ) = mutex.withLock {
+    val key = UserKey(appName, userId)
+    val currentMemories = this.memories[key] ?: emptyList()
+    this.memories[key] = currentMemories + memories
+  }
+
   override suspend fun searchMemory(
     appName: String,
     userId: String,
     query: String,
   ): SearchMemoryResponse = mutex.withLock {
-    val userSessions =
-      sessionEvents[UserKey(appName, userId)] ?: return SearchMemoryResponse(emptyList())
+    val key = UserKey(appName, userId)
+    val userSessions = sessionEvents[key] ?: emptyMap()
+    val explicitMemoriesList = this.memories[key] ?: emptyList()
 
     val wordsInQuery = WORD_PATTERN.findAll(query).map { it.value.lowercase() }.toSet()
 
@@ -111,6 +124,28 @@ class InMemoryMemoryService : MemoryService {
           author = event.author,
           timestamp = formatTimestamp(event.timestamp),
         )
+
+      matchingMemories.add(memory)
+    }
+
+    for (memory in explicitMemoriesList) {
+      val parts = memory.content.parts
+      if (parts.isEmpty()) {
+        continue
+      }
+
+      val wordsInMemory =
+        parts
+          .asSequence()
+          .mapNotNull { it.text }
+          .filter { it.isNotEmpty() }
+          .flatMap { WORD_PATTERN.findAll(it) }
+          .map { it.value.lowercase() }
+          .toSet()
+
+      if (wordsInQuery.none { it in wordsInMemory }) {
+        continue
+      }
 
       matchingMemories.add(memory)
     }

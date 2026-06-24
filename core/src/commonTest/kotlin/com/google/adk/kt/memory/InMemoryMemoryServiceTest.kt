@@ -156,6 +156,26 @@ class InMemoryMemoryServiceTest {
     assertEquals("Hello world", responseHello.memories[0].content.parts[0].text)
   }
 
+  @Test
+  fun addMemory_addsExplicitMemories() = runTest {
+    val memory =
+      MemoryEntry(
+        content = Content(role = null, parts = listOf(Part(text = "This is a direct memory.")))
+      )
+    memoryService.addMemory(appName = "app-1", userId = "user-1", memories = listOf(memory))
+
+    val response = memoryService.searchMemory("app-1", "user-1", "direct")
+    assertEquals(1, response.memories.size)
+    assertEquals("This is a direct memory.", response.memories[0].content.parts[0].text)
+
+    // Verify it also combines with sessionEvents
+    val session = createSession("app-1", "user-1", "session-1", "Hello world from session")
+    memoryService.addSessionToMemory(session)
+
+    val responseCombined = memoryService.searchMemory("app-1", "user-1", "direct session")
+    assertEquals(2, responseCombined.memories.size)
+  }
+
   private fun createEvent(id: String, text: String): Event {
     val content = Content(role = null, parts = listOf(Part(text = text)))
     return Event(

@@ -65,6 +65,29 @@ interface MemoryService {
   }
 
   /**
+   * Adds explicit memory items directly to the memory service.
+   *
+   * This is intended for services that support direct memory writes in addition to event-based
+   * memory generation.
+   *
+   * @param appName The application name for memory scope.
+   * @param userId The user ID for memory scope.
+   * @param memories Explicit memory items to add.
+   * @param customMetadata Optional, portable metadata for memory writes.
+   */
+  suspend fun addMemory(
+    appName: String,
+    userId: String,
+    memories: List<MemoryEntry>,
+    customMetadata: Map<String, Any?>? = null,
+  ) {
+    throw UnsupportedOperationException(
+      "This memory service does not support direct memory writes. " +
+        "Call addEventsToMemory(...) or addSessionToMemory(session) instead."
+    )
+  }
+
+  /**
    * Searches for sessions that match the query asynchronously.
    *
    * @param appName The name of the application.
