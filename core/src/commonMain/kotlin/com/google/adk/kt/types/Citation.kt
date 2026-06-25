@@ -19,4 +19,14 @@ package com.google.adk.kt.types
 import kotlinx.serialization.Serializable
 
 /** Represents a citation to a source. */
-@Serializable data class Citation(val title: String? = null)
+@Serializable
+data class Citation(
+  /** The title of the cited source. */
+  val title: String? = null,
+  /** The URI of the cited source. */
+  val uri: String? = null,
+  /** The start index (in bytes) of the cited span within the response content. */
+  val startIndex: Int? = null,
+  /** The end index (in bytes, exclusive) of the cited span within the response content. */
+  val endIndex: Int? = null,
+)

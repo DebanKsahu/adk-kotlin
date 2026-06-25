@@ -69,12 +69,22 @@ internal fun Candidate.toGenaiSdk(): com.google.genai.types.Candidate =
 // --- Citation ---
 /** Converts a [com.google.genai.types.Citation] from the GenAI SDK to an ADK [Citation]. */
 internal fun com.google.genai.types.Citation.fromGenaiSdk(): Citation =
-  Citation(title = title().getOrNull())
+  Citation(
+    title = title().getOrNull(),
+    uri = uri().getOrNull(),
+    startIndex = startIndex().getOrNull(),
+    endIndex = endIndex().getOrNull(),
+  )
 
 /** Converts an ADK [Citation] to a [com.google.genai.types.Citation] for the GenAI SDK. */
 internal fun Citation.toGenaiSdk(): com.google.genai.types.Citation =
   com.google.genai.types.Citation.builder()
-    .apply { this@toGenaiSdk.title?.let { title(it) } }
+    .apply {
+      this@toGenaiSdk.title?.let { title(it) }
+      this@toGenaiSdk.uri?.let { uri(it) }
+      this@toGenaiSdk.startIndex?.let { startIndex(it) }
+      this@toGenaiSdk.endIndex?.let { endIndex(it) }
+    }
     .build()
 
 // --- CitationMetadata ---

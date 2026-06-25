@@ -132,8 +132,13 @@ class GenaiConvertersTest {
 
   @Test
   fun citation_convertsCorrectly() {
-    val adkCitation = Citation()
+    val adkCitation =
+      Citation(title = "Example", uri = "https://example.com", startIndex = 3, endIndex = 17)
     val genaiCitation = adkCitation.toGenaiSdk()
+    assertEquals("https://example.com", genaiCitation.uri().get())
+    assertEquals(3, genaiCitation.startIndex().get())
+    assertEquals(17, genaiCitation.endIndex().get())
+
     val convertedBack = genaiCitation.fromGenaiSdk()
     assertEquals(adkCitation, convertedBack)
   }
