@@ -16,19 +16,8 @@
 
 package com.google.adk.kt.types
 
-/** Configuration for generating content. */
-data class GenerateContentConfig(
-  val tools: List<Tool>? = null,
-  val labels: Map<String, String>? = null,
-  val systemInstruction: Content? = null,
-  val temperature: Float? = null,
-  val topP: Float? = null,
-  val topK: Int? = null,
-  val candidateCount: Int? = null,
-  val maxOutputTokens: Int? = null,
-  val stopSequences: List<String>? = null,
-  val responseMimeType: String? = null,
-  val responseSchema: Schema? = null,
-  val thinkingConfig: ThinkingConfig? = null,
-  val toolConfig: ToolConfig? = null,
+/** Configuration for how the model uses the provided function declarations. */
+data class FunctionCallingConfig(
+  /** Function names the model is allowed to call. */
+  val allowedFunctionNames: List<String>? = null
 )

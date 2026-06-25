@@ -224,6 +224,7 @@ internal fun com.google.genai.types.GenerateContentConfig.fromGenaiSdk(): Genera
     responseMimeType = responseMimeType().getOrNull(),
     responseSchema = responseSchema().getOrNull()?.toKtSchema(),
     thinkingConfig = thinkingConfig().getOrNull()?.fromGenaiSdk(),
+    toolConfig = toolConfig().getOrNull()?.fromGenaiSdk(),
   )
 
 /**
@@ -245,7 +246,36 @@ internal fun GenerateContentConfig.toGenaiSdk(): com.google.genai.types.Generate
       this@toGenaiSdk.responseMimeType?.let { responseMimeType(it) }
       this@toGenaiSdk.responseSchema?.let { responseSchema(it.toGenAiSchema()) }
       this@toGenaiSdk.thinkingConfig?.let { thinkingConfig(it.toGenaiSdk()) }
+      this@toGenaiSdk.toolConfig?.let { toolConfig(it.toGenaiSdk()) }
     }
+    .build()
+
+// --- FunctionCallingConfig ---
+/**
+ * Converts a [com.google.genai.types.FunctionCallingConfig] from the GenAI SDK to an ADK
+ * [FunctionCallingConfig].
+ */
+internal fun com.google.genai.types.FunctionCallingConfig.fromGenaiSdk(): FunctionCallingConfig =
+  FunctionCallingConfig(allowedFunctionNames = allowedFunctionNames().getOrNull())
+
+/**
+ * Converts an ADK [FunctionCallingConfig] to a [com.google.genai.types.FunctionCallingConfig] for
+ * the GenAI SDK.
+ */
+internal fun FunctionCallingConfig.toGenaiSdk(): com.google.genai.types.FunctionCallingConfig =
+  com.google.genai.types.FunctionCallingConfig.builder()
+    .apply { this@toGenaiSdk.allowedFunctionNames?.let { allowedFunctionNames(it) } }
+    .build()
+
+// --- ToolConfig ---
+/** Converts a [com.google.genai.types.ToolConfig] from the GenAI SDK to an ADK [ToolConfig]. */
+internal fun com.google.genai.types.ToolConfig.fromGenaiSdk(): ToolConfig =
+  ToolConfig(functionCallingConfig = functionCallingConfig().getOrNull()?.fromGenaiSdk())
+
+/** Converts an ADK [ToolConfig] to a [com.google.genai.types.ToolConfig] for the GenAI SDK. */
+internal fun ToolConfig.toGenaiSdk(): com.google.genai.types.ToolConfig =
+  com.google.genai.types.ToolConfig.builder()
+    .apply { this@toGenaiSdk.functionCallingConfig?.let { functionCallingConfig(it.toGenaiSdk()) } }
     .build()
 
 // --- GenerateContentResponse ---

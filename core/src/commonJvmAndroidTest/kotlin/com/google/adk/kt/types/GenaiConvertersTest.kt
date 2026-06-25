@@ -211,6 +211,27 @@ class GenaiConvertersTest {
   }
 
   @Test
+  fun generateContentConfig_toolConfig_convertsCorrectly() {
+    val adkConfig =
+      GenerateContentConfig(
+        toolConfig =
+          ToolConfig(
+            functionCallingConfig =
+              FunctionCallingConfig(allowedFunctionNames = listOf("getWeather", "getTime"))
+          )
+      )
+
+    val genaiConfig = adkConfig.toGenaiSdk()
+    assertEquals(
+      listOf("getWeather", "getTime"),
+      genaiConfig.toolConfig().get().functionCallingConfig().get().allowedFunctionNames().get(),
+    )
+
+    val convertedBack = genaiConfig.fromGenaiSdk()
+    assertEquals(adkConfig.toolConfig, convertedBack.toolConfig)
+  }
+
+  @Test
   fun generateContentConfig_responseSchema_convertsCorrectly() {
     val adkConfig =
       GenerateContentConfig(
