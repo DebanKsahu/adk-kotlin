@@ -232,6 +232,28 @@ class GenaiConvertersTest {
   }
 
   @Test
+  fun generateContentConfig_safetySettings_convertsCorrectly() {
+    val adkConfig =
+      GenerateContentConfig(
+        safetySettings =
+          listOf(
+            SafetySetting(
+              category = HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+              threshold = HarmBlockThreshold.BLOCK_ONLY_HIGH,
+            )
+          )
+      )
+
+    val genaiConfig = adkConfig.toGenaiSdk()
+    val genaiSetting = genaiConfig.safetySettings().get().single()
+    assertEquals("HARM_CATEGORY_HATE_SPEECH", genaiSetting.category().get().toString())
+    assertEquals("BLOCK_ONLY_HIGH", genaiSetting.threshold().get().toString())
+
+    val convertedBack = genaiConfig.fromGenaiSdk()
+    assertEquals(adkConfig.safetySettings, convertedBack.safetySettings)
+  }
+
+  @Test
   fun generateContentConfig_responseSchema_convertsCorrectly() {
     val adkConfig =
       GenerateContentConfig(

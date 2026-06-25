@@ -225,6 +225,7 @@ internal fun com.google.genai.types.GenerateContentConfig.fromGenaiSdk(): Genera
     responseSchema = responseSchema().getOrNull()?.toKtSchema(),
     thinkingConfig = thinkingConfig().getOrNull()?.fromGenaiSdk(),
     toolConfig = toolConfig().getOrNull()?.fromGenaiSdk(),
+    safetySettings = safetySettings().getOrNull()?.map { it.fromGenaiSdk() },
   )
 
 /**
@@ -247,6 +248,7 @@ internal fun GenerateContentConfig.toGenaiSdk(): com.google.genai.types.Generate
       this@toGenaiSdk.responseSchema?.let { responseSchema(it.toGenAiSchema()) }
       this@toGenaiSdk.thinkingConfig?.let { thinkingConfig(it.toGenaiSdk()) }
       this@toGenaiSdk.toolConfig?.let { toolConfig(it.toGenaiSdk()) }
+      this@toGenaiSdk.safetySettings?.let { safetySettings(it.map { s -> s.toGenaiSdk() }) }
     }
     .build()
 
@@ -276,6 +278,27 @@ internal fun com.google.genai.types.ToolConfig.fromGenaiSdk(): ToolConfig =
 internal fun ToolConfig.toGenaiSdk(): com.google.genai.types.ToolConfig =
   com.google.genai.types.ToolConfig.builder()
     .apply { this@toGenaiSdk.functionCallingConfig?.let { functionCallingConfig(it.toGenaiSdk()) } }
+    .build()
+
+// --- SafetySetting ---
+/**
+ * Converts a [com.google.genai.types.SafetySetting] from the GenAI SDK to an ADK [SafetySetting].
+ */
+internal fun com.google.genai.types.SafetySetting.fromGenaiSdk(): SafetySetting =
+  SafetySetting(
+    category = category().getOrNull()?.toKt(),
+    threshold = threshold().getOrNull()?.toKt(),
+  )
+
+/**
+ * Converts an ADK [SafetySetting] to a [com.google.genai.types.SafetySetting] for the GenAI SDK.
+ */
+internal fun SafetySetting.toGenaiSdk(): com.google.genai.types.SafetySetting =
+  com.google.genai.types.SafetySetting.builder()
+    .apply {
+      this@toGenaiSdk.category?.let { category(it.toJava()) }
+      this@toGenaiSdk.threshold?.let { threshold(it.toJava()) }
+    }
     .build()
 
 // --- GenerateContentResponse ---

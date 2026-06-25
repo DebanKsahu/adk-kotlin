@@ -78,3 +78,27 @@ internal fun com.google.genai.types.MediaModality.toKt(): MediaModality =
  */
 internal fun MediaModality.toJava(): com.google.genai.types.MediaModality =
   com.google.genai.types.MediaModality(this.name)
+
+/** Converts a [com.google.genai.types.HarmCategory] from the GenAI SDK to an ADK [HarmCategory]. */
+internal fun com.google.genai.types.HarmCategory.toKt(): HarmCategory =
+  runCatching { HarmCategory.valueOf(this.toString()) }
+    .getOrDefault(HarmCategory.HARM_CATEGORY_UNSPECIFIED)
+
+/** Converts an ADK [HarmCategory] to a [com.google.genai.types.HarmCategory] for the GenAI SDK. */
+internal fun HarmCategory.toJava(): com.google.genai.types.HarmCategory =
+  com.google.genai.types.HarmCategory(this.name)
+
+/**
+ * Converts a [com.google.genai.types.HarmBlockThreshold] from the GenAI SDK to an ADK
+ * [HarmBlockThreshold].
+ */
+internal fun com.google.genai.types.HarmBlockThreshold.toKt(): HarmBlockThreshold =
+  runCatching { HarmBlockThreshold.valueOf(this.toString()) }
+    .getOrDefault(HarmBlockThreshold.HARM_BLOCK_THRESHOLD_UNSPECIFIED)
+
+/**
+ * Converts an ADK [HarmBlockThreshold] to a [com.google.genai.types.HarmBlockThreshold] for the
+ * GenAI SDK.
+ */
+internal fun HarmBlockThreshold.toJava(): com.google.genai.types.HarmBlockThreshold =
+  com.google.genai.types.HarmBlockThreshold(this.name)

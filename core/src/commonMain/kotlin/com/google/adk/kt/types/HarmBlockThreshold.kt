@@ -16,20 +16,23 @@
 
 package com.google.adk.kt.types
 
-/** Configuration for generating content. */
-data class GenerateContentConfig(
-  val tools: List<Tool>? = null,
-  val labels: Map<String, String>? = null,
-  val systemInstruction: Content? = null,
-  val temperature: Float? = null,
-  val topP: Float? = null,
-  val topK: Int? = null,
-  val candidateCount: Int? = null,
-  val maxOutputTokens: Int? = null,
-  val stopSequences: List<String>? = null,
-  val responseMimeType: String? = null,
-  val responseSchema: Schema? = null,
-  val thinkingConfig: ThinkingConfig? = null,
-  val toolConfig: ToolConfig? = null,
-  val safetySettings: List<SafetySetting>? = null,
-)
+/** The probability threshold at or above which content is blocked for a [HarmCategory]. */
+enum class HarmBlockThreshold {
+  /** The threshold is unspecified. */
+  HARM_BLOCK_THRESHOLD_UNSPECIFIED,
+
+  /** Block content with a low probability of harm and above. */
+  BLOCK_LOW_AND_ABOVE,
+
+  /** Block content with a medium probability of harm and above. */
+  BLOCK_MEDIUM_AND_ABOVE,
+
+  /** Block only content with a high probability of harm. */
+  BLOCK_ONLY_HIGH,
+
+  /** Do not block any content based on probability. */
+  BLOCK_NONE,
+
+  /** Turn off the safety filter for this category. */
+  OFF,
+}
