@@ -52,13 +52,17 @@ open class InMemoryRunner : AbstractRunner {
    * [App.plugins], and [App.resumabilityConfig].
    *
    * This is the recommended way to configure plugins and resumability.
+   *
+   * @param skipClosingPlugins See [PluginManager.skipClosingPlugins]. Set to `true` when the
+   *   [App.plugins] are shared with another (parent) runner whose lifecycle owns them.
    */
   constructor(
     app: App,
     sessionService: SessionService = InMemorySessionService(),
     artifactService: ArtifactService? = InMemoryArtifactService(),
     memoryService: MemoryService? = InMemoryMemoryService(),
-  ) : super(app, sessionService, artifactService, memoryService)
+    skipClosingPlugins: Boolean = false,
+  ) : super(app, sessionService, artifactService, memoryService, skipClosingPlugins)
 
   /**
    * Creates an [InMemoryRunner] with an explicit [pluginManager].

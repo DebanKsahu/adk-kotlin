@@ -19,6 +19,7 @@ package com.google.adk.kt.tools
 import com.google.adk.kt.SchemaUtils
 import com.google.adk.kt.agents.BaseAgent
 import com.google.adk.kt.agents.LlmAgent
+import com.google.adk.kt.apps.App
 import com.google.adk.kt.runners.InMemoryRunner
 import com.google.adk.kt.serialization.Json
 import com.google.adk.kt.sessions.InMemorySessionService
@@ -40,9 +41,16 @@ import kotlinx.coroutines.flow.lastOrNull
  * @property agent The agent to wrap.
  * @property skipSummarization Whether to skip summarization of the agent output in the parent
  *   agent.
+ * @property includePlugins Whether the parent runner's plugins should be propagated to the wrapped
+ *   agent's runner. When `true` (the default), the wrapped agent observes the same plugins as the
+ *   parent (their plugin callbacks fire for the child invocation). When `false`, the wrapped agent
+ *   runs with no plugins.
  */
-class AgentTool(val agent: BaseAgent, val skipSummarization: Boolean = false) :
-  BaseTool(name = agent.name, description = agent.description) {
+class AgentTool(
+  val agent: BaseAgent,
+  val skipSummarization: Boolean = false,
+  val includePlugins: Boolean = true,
+) : BaseTool(name = agent.name, description = agent.description) {
 
   private val inputSchema: Schema? by lazy { getInputSchema(agent) }
 
@@ -90,8 +98,16 @@ class AgentTool(val agent: BaseAgent, val skipSummarization: Boolean = false) :
     // parent's history and does not append its events to the parent session.
     val childAppName = context.invocationContext.session.key.appName
     val childSessionService = InMemorySessionService()
+    // When [includePlugins] is true (the default), reuse the parent's plugins so the wrapped
+    // agent's runner fires the same plugin callbacks as the parent.
+    val childPlugins =
+      if (includePlugins) context.invocationContext.pluginManager.plugins else emptyList()
     val runner =
-      InMemoryRunner(agent = agent, appName = childAppName, sessionService = childSessionService)
+      InMemoryRunner(
+        app = App(appName = childAppName, rootAgent = agent, plugins = childPlugins),
+        sessionService = childSessionService,
+        skipClosingPlugins = includePlugins && childPlugins.isNotEmpty(),
+      )
 
     // Forward non-internal state from the parent context to the child session.
     val parentState =

@@ -79,4 +79,44 @@ class PluginManagerTest {
     assertEquals(userMessage, result)
     assertTrue(called)
   }
+
+  @Test
+  fun close_invokesPluginClose() = runTest {
+    var closed = 0
+    val plugin =
+      object : Plugin {
+        override val name = "closeable"
+
+        override suspend fun close() {
+          closed += 1
+        }
+      }
+    val manager = PluginManager(listOf(plugin))
+
+    manager.close()
+
+    assertEquals(1, closed)
+  }
+
+  /**
+   * When [PluginManager.skipClosingPlugins] is set, [PluginManager.close] must be a no-op so that
+   * plugins owned by another manager (e.g. the parent runner) are not torn down.
+   */
+  @Test
+  fun close_skipClosingPlugins_doesNotInvokePluginClose() = runTest {
+    var closed = 0
+    val plugin =
+      object : Plugin {
+        override val name = "shared"
+
+        override suspend fun close() {
+          closed += 1
+        }
+      }
+    val manager = PluginManager(listOf(plugin), skipClosingPlugins = true)
+
+    manager.close()
+
+    assertEquals(0, closed)
+  }
 }

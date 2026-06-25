@@ -16,10 +16,14 @@
 
 package com.google.adk.kt.tools
 
+import com.google.adk.kt.agents.CallbackContext
 import com.google.adk.kt.agents.LlmAgent
+import com.google.adk.kt.apps.App
+import com.google.adk.kt.callbacks.CallbackChoice
 import com.google.adk.kt.events.Event
 import com.google.adk.kt.events.EventActions
 import com.google.adk.kt.models.LlmResponse
+import com.google.adk.kt.plugins.Plugin
 import com.google.adk.kt.runners.InMemoryRunner
 import com.google.adk.kt.sessions.InMemorySessionService
 import com.google.adk.kt.sessions.Session
@@ -393,5 +397,146 @@ class AgentToolTest {
     assertFailsWith<IllegalArgumentException> {
       tool.run(context, mapOf("name" to "John", "unexpected" to "value"))
     }
+  }
+
+  /** Plugin that counts [beforeAgent] invocations per agent name. */
+  private class TrackingPlugin(override val name: String = "tracking") : Plugin {
+    val beforeAgentCalls = mutableMapOf<String, Int>()
+
+    override suspend fun beforeAgent(
+      context: CallbackContext
+    ): CallbackChoice<EventActions, com.google.adk.kt.types.Content> {
+      val agentName = context.agent.name
+      beforeAgentCalls[agentName] = (beforeAgentCalls[agentName] ?: 0) + 1
+      return CallbackChoice.Continue(EventActions())
+    }
+  }
+
+  /**
+   * Parent runner plugins must propagate to the wrapped agent's runner by default. Mirrors Python
+   * ADK 1.x `test_include_plugins_default_true`.
+   */
+  @Test
+  fun run_throughInMemoryRunner_includePluginsDefaultTrue_propagatesParentPlugins() = runTest {
+    val plugin = TrackingPlugin()
+    val toolAgent =
+      LlmAgent(
+        name = "tool_agent",
+        model =
+          DummyModel("inner-model") {
+            flowOf(LlmResponse(content = modelMessage("Response from inner agent")))
+          },
+      )
+    val rootAgent =
+      LlmAgent(
+        name = "root_agent",
+        model =
+          DummyModel(
+            name = "root-model",
+            flows =
+              listOf(
+                flowOf(
+                  modelFunctionCallResponse(
+                    name = "tool_agent",
+                    args = mapOf("request" to "Hello inner"),
+                  )
+                ),
+                flowOf(LlmResponse(content = modelMessage("Final Answer"))),
+              ),
+          ),
+        tools = listOf(AgentTool(toolAgent)),
+      )
+    val runner =
+      InMemoryRunner(App(appName = "test_app", rootAgent = rootAgent, plugins = listOf(plugin)))
+
+    val unused =
+      runner
+        .runAsync(userId = "user1", sessionId = "session1", newMessage = userMessage("hi"))
+        .toList()
+
+    // beforeAgent must fire for both root_agent and tool_agent.
+    assertEquals(1, plugin.beforeAgentCalls["root_agent"])
+    assertEquals(1, plugin.beforeAgentCalls["tool_agent"])
+  }
+
+  /** Mirrors Python `test_include_plugins_explicit_true`. */
+  @Test
+  fun run_throughInMemoryRunner_includePluginsExplicitTrue_propagatesParentPlugins() = runTest {
+    val plugin = TrackingPlugin()
+    val toolAgent =
+      LlmAgent(
+        name = "tool_agent",
+        model = DummyModel("inner-model") { flowOf(LlmResponse(content = modelMessage("ok"))) },
+      )
+    val rootAgent =
+      LlmAgent(
+        name = "root_agent",
+        model =
+          DummyModel(
+            name = "root-model",
+            flows =
+              listOf(
+                flowOf(
+                  modelFunctionCallResponse(
+                    name = "tool_agent",
+                    args = mapOf("request" to "Hello inner"),
+                  )
+                ),
+                flowOf(LlmResponse(content = modelMessage("Final Answer"))),
+              ),
+          ),
+        tools = listOf(AgentTool(toolAgent, includePlugins = true)),
+      )
+    val runner =
+      InMemoryRunner(App(appName = "test_app", rootAgent = rootAgent, plugins = listOf(plugin)))
+
+    val unused =
+      runner
+        .runAsync(userId = "user1", sessionId = "session1", newMessage = userMessage("hi"))
+        .toList()
+
+    assertEquals(1, plugin.beforeAgentCalls["root_agent"])
+    assertEquals(1, plugin.beforeAgentCalls["tool_agent"])
+  }
+
+  /** Mirrors Python `test_include_plugins_false`. */
+  @Test
+  fun run_throughInMemoryRunner_includePluginsFalse_doesNotPropagateParentPlugins() = runTest {
+    val plugin = TrackingPlugin()
+    val toolAgent =
+      LlmAgent(
+        name = "tool_agent",
+        model = DummyModel("inner-model") { flowOf(LlmResponse(content = modelMessage("ok"))) },
+      )
+    val rootAgent =
+      LlmAgent(
+        name = "root_agent",
+        model =
+          DummyModel(
+            name = "root-model",
+            flows =
+              listOf(
+                flowOf(
+                  modelFunctionCallResponse(
+                    name = "tool_agent",
+                    args = mapOf("request" to "Hello inner"),
+                  )
+                ),
+                flowOf(LlmResponse(content = modelMessage("Final Answer"))),
+              ),
+          ),
+        tools = listOf(AgentTool(toolAgent, includePlugins = false)),
+      )
+    val runner =
+      InMemoryRunner(App(appName = "test_app", rootAgent = rootAgent, plugins = listOf(plugin)))
+
+    val unused =
+      runner
+        .runAsync(userId = "user1", sessionId = "session1", newMessage = userMessage("hi"))
+        .toList()
+
+    // Plugin only fires for root_agent; the wrapped agent runs without parent plugins.
+    assertEquals(1, plugin.beforeAgentCalls["root_agent"])
+    assertEquals(null, plugin.beforeAgentCalls["tool_agent"])
   }
 }

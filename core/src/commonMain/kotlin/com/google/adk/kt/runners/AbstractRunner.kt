@@ -106,13 +106,14 @@ abstract class AbstractRunner : Runner {
     sessionService: SessionService,
     artifactService: ArtifactService?,
     memoryService: MemoryService?,
+    skipClosingPlugins: Boolean = false,
   ) {
     this.appName = app.appName
     this.agent = app.rootAgent
     this.sessionService = sessionService
     this.artifactService = artifactService
     this.memoryService = memoryService
-    this.pluginManager = PluginManager(app.plugins)
+    this.pluginManager = PluginManager(app.plugins, skipClosingPlugins = skipClosingPlugins)
     this.resumabilityConfig = app.resumabilityConfig ?: ResumabilityConfig()
     this.app =
       app.copy(

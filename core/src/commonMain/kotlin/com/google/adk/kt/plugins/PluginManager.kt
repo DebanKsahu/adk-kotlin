@@ -34,8 +34,16 @@ import com.google.adk.kt.logging.LoggerFactory
  * Manages the pre-aggregation of typed functional callbacks.
  *
  * @property plugins The list of registered plugins managed by this instance.
+ * @property skipClosingPlugins When `true`, [close] becomes a no-op so that plugins owned by
+ *   another (parent) manager are not torn down by this sub-manager. Intended for cases where a
+ *   sub-runner shares the parent runner's [Plugin] instances (e.g.
+ *   [com.google.adk.kt.tools.AgentTool] propagating parent plugins to the wrapped agent's runner):
+ *   the sub-runner must not close plugins it does not own.
  */
-class PluginManager(val plugins: List<Plugin> = emptyList()) {
+class PluginManager(
+  val plugins: List<Plugin> = emptyList(),
+  val skipClosingPlugins: Boolean = false,
+) {
 
   init {
     val duplicates = plugins.groupingBy { it.name }.eachCount().filterValues { it > 1 }.keys
@@ -89,6 +97,10 @@ class PluginManager(val plugins: List<Plugin> = emptyList()) {
   }
 
   suspend fun close() {
+    if (skipClosingPlugins) {
+      logger.trace { "Skipping close() for ${plugins.size} plugin(s); not owned by this manager." }
+      return
+    }
     val exceptions = mutableListOf<Exception>()
     for (plugin in plugins) {
       try {
