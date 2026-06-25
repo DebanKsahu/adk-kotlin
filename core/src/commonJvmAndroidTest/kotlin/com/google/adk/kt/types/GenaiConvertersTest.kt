@@ -390,6 +390,45 @@ class GenaiConvertersTest {
   }
 
   @Test
+  fun groundingMetadata_withPayload_convertsCorrectly() {
+    val adkGroundingMetadata =
+      GroundingMetadata(
+        webSearchQueries = listOf("kotlin coroutines"),
+        groundingChunks =
+          listOf(
+            GroundingChunk(
+              web =
+                GroundingChunkWeb(
+                  uri = "https://example.com",
+                  title = "Example",
+                  domain = "example.com",
+                )
+            )
+          ),
+        groundingSupports =
+          listOf(
+            GroundingSupport(
+              segment = Segment(startIndex = 0, endIndex = 5, partIndex = 0, text = "hello"),
+              groundingChunkIndices = listOf(0),
+              confidenceScores = listOf(0.75f),
+            )
+          ),
+        searchEntryPoint = SearchEntryPoint(renderedContent = "<div>suggestions</div>"),
+        retrievalMetadata = RetrievalMetadata(googleSearchDynamicRetrievalScore = 0.5f),
+      )
+
+    val genaiGroundingMetadata = adkGroundingMetadata.toGenaiSdk()
+    assertEquals(listOf("kotlin coroutines"), genaiGroundingMetadata.webSearchQueries().get())
+    assertEquals(
+      "example.com",
+      genaiGroundingMetadata.groundingChunks().get().single().web().get().domain().get(),
+    )
+
+    val convertedBack = genaiGroundingMetadata.fromGenaiSdk()
+    assertEquals(adkGroundingMetadata, convertedBack)
+  }
+
+  @Test
   fun googleSearch_convertsCorrectly() {
     val adkGoogleSearch = GoogleSearch()
     val genaiGoogleSearch = adkGoogleSearch.toGenaiSdk()

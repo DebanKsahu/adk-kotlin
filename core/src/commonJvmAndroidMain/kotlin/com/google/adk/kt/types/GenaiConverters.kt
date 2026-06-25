@@ -345,14 +345,184 @@ internal fun GenerateContentResponse.toGenaiSdk(): com.google.genai.types.Genera
  * [GroundingMetadata].
  */
 internal fun com.google.genai.types.GroundingMetadata.fromGenaiSdk(): GroundingMetadata =
-  GroundingMetadata(imageSearchQueries = imageSearchQueries().getOrNull() ?: emptyList())
+  GroundingMetadata(
+    imageSearchQueries = imageSearchQueries().getOrNull() ?: emptyList(),
+    groundingChunks = groundingChunks().getOrNull()?.map { it.fromGenaiSdk() },
+    groundingSupports = groundingSupports().getOrNull()?.map { it.fromGenaiSdk() },
+    webSearchQueries = webSearchQueries().getOrNull(),
+    searchEntryPoint = searchEntryPoint().getOrNull()?.fromGenaiSdk(),
+    retrievalMetadata = retrievalMetadata().getOrNull()?.fromGenaiSdk(),
+  )
 
 /**
  * Converts an ADK [GroundingMetadata] to a [com.google.genai.types.GroundingMetadata] for the GenAI
  * SDK.
  */
 internal fun GroundingMetadata.toGenaiSdk(): com.google.genai.types.GroundingMetadata =
-  com.google.genai.types.GroundingMetadata.builder().imageSearchQueries(imageSearchQueries).build()
+  com.google.genai.types.GroundingMetadata.builder()
+    .apply {
+      imageSearchQueries(this@toGenaiSdk.imageSearchQueries)
+      this@toGenaiSdk.groundingChunks?.let { groundingChunks(it.map { c -> c.toGenaiSdk() }) }
+      this@toGenaiSdk.groundingSupports?.let { groundingSupports(it.map { s -> s.toGenaiSdk() }) }
+      this@toGenaiSdk.webSearchQueries?.let { webSearchQueries(it) }
+      this@toGenaiSdk.searchEntryPoint?.let { searchEntryPoint(it.toGenaiSdk()) }
+      this@toGenaiSdk.retrievalMetadata?.let { retrievalMetadata(it.toGenaiSdk()) }
+    }
+    .build()
+
+// --- GroundingChunk ---
+/**
+ * Converts a [com.google.genai.types.GroundingChunk] from the GenAI SDK to an ADK [GroundingChunk].
+ */
+internal fun com.google.genai.types.GroundingChunk.fromGenaiSdk(): GroundingChunk =
+  GroundingChunk(
+    web = web().getOrNull()?.fromGenaiSdk(),
+    retrievedContext = retrievedContext().getOrNull()?.fromGenaiSdk(),
+  )
+
+/** Converts an ADK [GroundingChunk] to a [com.google.genai.types.GroundingChunk] for the SDK. */
+internal fun GroundingChunk.toGenaiSdk(): com.google.genai.types.GroundingChunk =
+  com.google.genai.types.GroundingChunk.builder()
+    .apply {
+      this@toGenaiSdk.web?.let { web(it.toGenaiSdk()) }
+      this@toGenaiSdk.retrievedContext?.let { retrievedContext(it.toGenaiSdk()) }
+    }
+    .build()
+
+// --- GroundingChunkWeb ---
+/**
+ * Converts a [com.google.genai.types.GroundingChunkWeb] from the GenAI SDK to an ADK
+ * [GroundingChunkWeb].
+ */
+internal fun com.google.genai.types.GroundingChunkWeb.fromGenaiSdk(): GroundingChunkWeb =
+  GroundingChunkWeb(
+    uri = uri().getOrNull(),
+    title = title().getOrNull(),
+    domain = domain().getOrNull(),
+  )
+
+/**
+ * Converts an ADK [GroundingChunkWeb] to a [com.google.genai.types.GroundingChunkWeb] for the SDK.
+ */
+internal fun GroundingChunkWeb.toGenaiSdk(): com.google.genai.types.GroundingChunkWeb =
+  com.google.genai.types.GroundingChunkWeb.builder()
+    .apply {
+      this@toGenaiSdk.uri?.let { uri(it) }
+      this@toGenaiSdk.title?.let { title(it) }
+      this@toGenaiSdk.domain?.let { domain(it) }
+    }
+    .build()
+
+// --- GroundingChunkRetrievedContext ---
+/**
+ * Converts a [com.google.genai.types.GroundingChunkRetrievedContext] from the GenAI SDK to an ADK
+ * [GroundingChunkRetrievedContext].
+ */
+internal fun com.google.genai.types.GroundingChunkRetrievedContext.fromGenaiSdk():
+  GroundingChunkRetrievedContext =
+  GroundingChunkRetrievedContext(
+    uri = uri().getOrNull(),
+    title = title().getOrNull(),
+    text = text().getOrNull(),
+  )
+
+/**
+ * Converts an ADK [GroundingChunkRetrievedContext] to a
+ * [com.google.genai.types.GroundingChunkRetrievedContext] for the GenAI SDK.
+ */
+internal fun GroundingChunkRetrievedContext.toGenaiSdk():
+  com.google.genai.types.GroundingChunkRetrievedContext =
+  com.google.genai.types.GroundingChunkRetrievedContext.builder()
+    .apply {
+      this@toGenaiSdk.uri?.let { uri(it) }
+      this@toGenaiSdk.title?.let { title(it) }
+      this@toGenaiSdk.text?.let { text(it) }
+    }
+    .build()
+
+// --- GroundingSupport ---
+/**
+ * Converts a [com.google.genai.types.GroundingSupport] from the GenAI SDK to an ADK
+ * [GroundingSupport].
+ */
+internal fun com.google.genai.types.GroundingSupport.fromGenaiSdk(): GroundingSupport =
+  GroundingSupport(
+    segment = segment().getOrNull()?.fromGenaiSdk(),
+    groundingChunkIndices = groundingChunkIndices().getOrNull(),
+    confidenceScores = confidenceScores().getOrNull(),
+  )
+
+/**
+ * Converts an ADK [GroundingSupport] to a [com.google.genai.types.GroundingSupport] for the SDK.
+ */
+internal fun GroundingSupport.toGenaiSdk(): com.google.genai.types.GroundingSupport =
+  com.google.genai.types.GroundingSupport.builder()
+    .apply {
+      this@toGenaiSdk.segment?.let { segment(it.toGenaiSdk()) }
+      this@toGenaiSdk.groundingChunkIndices?.let { groundingChunkIndices(it) }
+      this@toGenaiSdk.confidenceScores?.let { confidenceScores(it) }
+    }
+    .build()
+
+// --- Segment ---
+/** Converts a [com.google.genai.types.Segment] from the GenAI SDK to an ADK [Segment]. */
+internal fun com.google.genai.types.Segment.fromGenaiSdk(): Segment =
+  Segment(
+    startIndex = startIndex().getOrNull(),
+    endIndex = endIndex().getOrNull(),
+    partIndex = partIndex().getOrNull(),
+    text = text().getOrNull(),
+  )
+
+/** Converts an ADK [Segment] to a [com.google.genai.types.Segment] for the GenAI SDK. */
+internal fun Segment.toGenaiSdk(): com.google.genai.types.Segment =
+  com.google.genai.types.Segment.builder()
+    .apply {
+      this@toGenaiSdk.startIndex?.let { startIndex(it) }
+      this@toGenaiSdk.endIndex?.let { endIndex(it) }
+      this@toGenaiSdk.partIndex?.let { partIndex(it) }
+      this@toGenaiSdk.text?.let { text(it) }
+    }
+    .build()
+
+// --- SearchEntryPoint ---
+/**
+ * Converts a [com.google.genai.types.SearchEntryPoint] from the GenAI SDK to an ADK
+ * [SearchEntryPoint].
+ */
+internal fun com.google.genai.types.SearchEntryPoint.fromGenaiSdk(): SearchEntryPoint =
+  SearchEntryPoint(renderedContent = renderedContent().getOrNull())
+
+/**
+ * Converts an ADK [SearchEntryPoint] to a [com.google.genai.types.SearchEntryPoint] for the SDK.
+ */
+internal fun SearchEntryPoint.toGenaiSdk(): com.google.genai.types.SearchEntryPoint =
+  com.google.genai.types.SearchEntryPoint.builder()
+    .apply { this@toGenaiSdk.renderedContent?.let { renderedContent(it) } }
+    .build()
+
+// --- RetrievalMetadata ---
+/**
+ * Converts a [com.google.genai.types.RetrievalMetadata] from the GenAI SDK to an ADK
+ * [RetrievalMetadata].
+ */
+internal fun com.google.genai.types.RetrievalMetadata.fromGenaiSdk(): RetrievalMetadata =
+  RetrievalMetadata(
+    googleSearchDynamicRetrievalScore = googleSearchDynamicRetrievalScore().getOrNull()
+  )
+
+/**
+ * Converts an ADK [RetrievalMetadata] to a [com.google.genai.types.RetrievalMetadata] for the GenAI
+ * SDK.
+ */
+internal fun RetrievalMetadata.toGenaiSdk(): com.google.genai.types.RetrievalMetadata =
+  com.google.genai.types.RetrievalMetadata.builder()
+    .apply {
+      this@toGenaiSdk.googleSearchDynamicRetrievalScore?.let {
+        googleSearchDynamicRetrievalScore(it)
+      }
+    }
+    .build()
 
 // --- PromptFeedback ---
 /**
