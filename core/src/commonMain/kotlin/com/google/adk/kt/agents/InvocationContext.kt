@@ -480,6 +480,11 @@ data class InvocationContext(
     this[TelemetryAttributes.GEN_AI_TOOL_NAME] = tool.name
     this[TelemetryAttributes.GEN_AI_TOOL_DESCRIPTION] = tool.description
     this[TelemetryAttributes.GEN_AI_TOOL_TYPE] = tool::class.simpleName ?: "unknown"
+    // Associate this client-side span with a remote MCP tool's destination resource (for AppHub),
+    // when the tool carries the id in its custom metadata (parity with Python `trace_tool_call`).
+    tool.customMetadata[TelemetryAttributes.GCP_MCP_SERVER_DESTINATION_ID]?.let {
+      this[TelemetryAttributes.GCP_MCP_SERVER_DESTINATION_ID] = it.toString()
+    }
     this[TelemetryAttributes.GCP_VERTEX_AGENT_INVOCATION_ID] = invocationId
     session.key.id?.let { this[TelemetryAttributes.GCP_VERTEX_AGENT_SESSION_ID] = it }
     this[TelemetryAttributes.GCP_VERTEX_AGENT_EVENT_ID] = eventId

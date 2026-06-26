@@ -54,4 +54,8 @@ object TelemetryAttributes {
   const val GCP_VERTEX_AGENT_TOOL_RESPONSE = "gcp.vertex.agent.tool_response"
   const val GCP_VERTEX_AGENT_LLM_REQUEST = "gcp.vertex.agent.llm_request"
   const val GCP_VERTEX_AGENT_LLM_RESPONSE = "gcp.vertex.agent.llm_response"
+
+  // MCP / remote-tool attributes. Also used as the key under which a tool's custom metadata carries
+  // the destination id, mirroring Python ADK (single source of truth for both).
+  const val GCP_MCP_SERVER_DESTINATION_ID = "gcp.mcp.server.destination.id"
 }

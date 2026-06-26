@@ -33,6 +33,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlinx.coroutines.test.runTest
 
 class ToolTelemetryTest {
@@ -243,6 +244,42 @@ class ToolTelemetryTest {
     assertEquals("IllegalArgumentException", span.attributes[TelemetryAttributes.ERROR_TYPE])
   }
 
+  @Test
+  fun executeSingleFunctionCall_withDestinationId_setsMcpDestinationAttribute() = runTest {
+    val unused =
+      createInvocationContext()
+        .executeSingleFunctionCall(
+          FunctionCall(name = "mcp_tool", args = emptyMap(), id = "call_1"),
+          mapOf("mcp_tool" to DestinationIdFunctionTool("my-destination")),
+        )
+
+    val span = fakeTracer.recordedSpans.single { it.name == "execute_tool mcp_tool" }
+    assertEquals(
+      "my-destination",
+      span.attributes[TelemetryAttributes.GCP_MCP_SERVER_DESTINATION_ID],
+    )
+  }
+
+  @Test
+  fun executeSingleFunctionCall_withoutDestinationId_omitsMcpDestinationAttribute() = runTest {
+    val unused =
+      createInvocationContext()
+        .executeSingleFunctionCall(
+          FunctionCall(name = "other_meta_tool", args = emptyMap(), id = "call_1"),
+          mapOf("other_meta_tool" to OtherMetadataFunctionTool()),
+        )
+
+    val span = fakeTracer.recordedSpans.single { it.name == "execute_tool other_meta_tool" }
+    assertNull(span.attributes[TelemetryAttributes.GCP_MCP_SERVER_DESTINATION_ID])
+  }
+
+  @Test
+  fun executeSingleFunctionCall_emptyCustomMetadata_omitsMcpDestinationAttribute() = runTest {
+    val span = recordSingleToolSpan()
+
+    assertNull(span.attributes[TelemetryAttributes.GCP_MCP_SERVER_DESTINATION_ID])
+  }
+
   private suspend fun recordSingleToolSpan(): DummySpan {
     val unused =
       createInvocationContext()
@@ -289,5 +326,29 @@ class ToolTelemetryTest {
 
     override suspend fun execute(context: ToolContext, args: Map<String, Any>): Any =
       throw IllegalArgumentException("bad arg")
+  }
+
+  private class DestinationIdFunctionTool(destinationId: String) :
+    FunctionTool(
+      "mcp_tool",
+      "An MCP tool",
+      customMetadata = mapOf(TelemetryAttributes.GCP_MCP_SERVER_DESTINATION_ID to destinationId),
+    ) {
+    override fun declaration() = null
+
+    override suspend fun execute(context: ToolContext, args: Map<String, Any>): Any =
+      mapOf("output" to "success")
+  }
+
+  private class OtherMetadataFunctionTool :
+    FunctionTool(
+      "other_meta_tool",
+      "A tool with unrelated metadata",
+      customMetadata = mapOf("k" to "v"),
+    ) {
+    override fun declaration() = null
+
+    override suspend fun execute(context: ToolContext, args: Map<String, Any>): Any =
+      mapOf("output" to "success")
   }
 }
