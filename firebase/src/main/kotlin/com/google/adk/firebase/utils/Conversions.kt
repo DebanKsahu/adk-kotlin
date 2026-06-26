@@ -106,10 +106,12 @@ internal class Conversions {
       logger.warn { "Multiple candidates found in the response, only the first one will be used" }
     }
 
+    val finishReason = candidate?.finishReason?.let { toAdkFinishReason(it) }
     return LlmResponse(
       content = candidate?.content?.let { toAdkContent(it) },
       usageMetadata = response.usageMetadata?.let { toAdkUsageMetadata(it) },
-      finishReason = candidate?.finishReason?.let { toAdkFinishReason(it) },
+      finishReason = finishReason,
+      errorCode = finishReason?.takeIf { it != FinishReason.STOP }?.name,
       citationMetadata = candidate?.citationMetadata?.let { toAdkCitationMetadata(it) },
       groundingMetadata = candidate?.groundingMetadata?.let { toAdkGroundingMetadata(it) },
       errorMessage =
@@ -127,10 +129,16 @@ internal class Conversions {
   fun toAdkCitationMetadata(citationMetadata: FirebaseCitationMetadata): CitationMetadata =
     CitationMetadata(citationSources = citationMetadata.citations.map { toAdkCitation(it) })
 
-  fun toAdkCitation(citation: FirebaseCitation): Citation = Citation(title = citation.title)
+  fun toAdkCitation(citation: FirebaseCitation): Citation =
+    Citation(
+      title = citation.title,
+      uri = citation.uri,
+      startIndex = citation.startIndex,
+      endIndex = citation.endIndex,
+    )
 
   fun toAdkGroundingMetadata(groundingMetadata: FirebaseGroundingMetadata): GroundingMetadata =
-    GroundingMetadata()
+    GroundingMetadata(webSearchQueries = groundingMetadata.webSearchQueries)
 
   fun toAdkFinishReason(finishReason: FirebaseFinishReason): FinishReason =
     when (finishReason) {
@@ -153,6 +161,8 @@ internal class Conversions {
       promptTokenCount = usageMetadata.promptTokenCount,
       candidatesTokenCount = usageMetadata.candidatesTokenCount,
       totalTokenCount = usageMetadata.totalTokenCount,
+      thoughtsTokenCount = usageMetadata.thoughtsTokenCount,
+      toolUsePromptTokenCount = usageMetadata.toolUsePromptTokenCount,
     )
 
   fun forRequest(request: LlmRequest): RequestConverter = RequestConverter(request)
