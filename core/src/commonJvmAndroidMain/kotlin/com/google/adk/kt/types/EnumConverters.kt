@@ -15,113 +15,89 @@
  */
 package com.google.adk.kt.types
 
-/**
- * Converts a [com.google.genai.types.BlockedReason] from the GenAI SDK to an ADK [BlockedReason].
- */
-internal fun com.google.genai.types.BlockedReason.toKt(): BlockedReason =
+import com.google.genai.types.BlockedReason as GenAiBlockedReason
+import com.google.genai.types.FinishReason as GenAiFinishReason
+import com.google.genai.types.HarmBlockThreshold as GenAiHarmBlockThreshold
+import com.google.genai.types.HarmCategory as GenAiHarmCategory
+import com.google.genai.types.MediaModality as GenAiMediaModality
+import com.google.genai.types.MediaResolution as GenAiMediaResolution
+import com.google.genai.types.ServiceTier as GenAiServiceTier
+import com.google.genai.types.ThinkingLevel as GenAiThinkingLevel
+
+/** Converts a [GenAiBlockedReason] from the GenAI SDK to an ADK [BlockedReason]. */
+internal fun GenAiBlockedReason.toKt(): BlockedReason =
   when (this.knownEnum()) {
-    com.google.genai.types.BlockedReason.Known.BLOCKED_REASON_UNSPECIFIED ->
-      BlockedReason.BLOCKED_REASON_UNSPECIFIED
-    com.google.genai.types.BlockedReason.Known.SAFETY -> BlockedReason.SAFETY
-    com.google.genai.types.BlockedReason.Known.OTHER -> BlockedReason.OTHER
-    com.google.genai.types.BlockedReason.Known.BLOCKLIST -> BlockedReason.BLOCKLIST
-    com.google.genai.types.BlockedReason.Known.PROHIBITED_CONTENT ->
-      BlockedReason.PROHIBITED_CONTENT
-    com.google.genai.types.BlockedReason.Known.IMAGE_SAFETY -> BlockedReason.IMAGE_SAFETY
-    com.google.genai.types.BlockedReason.Known.MODEL_ARMOR -> BlockedReason.MODEL_ARMOR
-    com.google.genai.types.BlockedReason.Known.JAILBREAK -> BlockedReason.JAILBREAK
+    GenAiBlockedReason.Known.BLOCKED_REASON_UNSPECIFIED -> BlockedReason.BLOCKED_REASON_UNSPECIFIED
+    GenAiBlockedReason.Known.SAFETY -> BlockedReason.SAFETY
+    GenAiBlockedReason.Known.OTHER -> BlockedReason.OTHER
+    GenAiBlockedReason.Known.BLOCKLIST -> BlockedReason.BLOCKLIST
+    GenAiBlockedReason.Known.PROHIBITED_CONTENT -> BlockedReason.PROHIBITED_CONTENT
+    GenAiBlockedReason.Known.IMAGE_SAFETY -> BlockedReason.IMAGE_SAFETY
+    GenAiBlockedReason.Known.MODEL_ARMOR -> BlockedReason.MODEL_ARMOR
+    GenAiBlockedReason.Known.JAILBREAK -> BlockedReason.JAILBREAK
   }
 
-/**
- * Converts an ADK [BlockedReason] to a [com.google.genai.types.BlockedReason] for the GenAI SDK.
- */
-internal fun BlockedReason.toJava(): com.google.genai.types.BlockedReason =
-  com.google.genai.types.BlockedReason(this.name)
+/** Converts an ADK [BlockedReason] to a [GenAiBlockedReason] for the GenAI SDK. */
+internal fun BlockedReason.toJava(): GenAiBlockedReason = GenAiBlockedReason(this.name)
 
-/** Converts a [com.google.genai.types.FinishReason] from the GenAI SDK to an ADK [FinishReason]. */
-internal fun com.google.genai.types.FinishReason.toKt(): FinishReason =
+/** Converts a [GenAiFinishReason] from the GenAI SDK to an ADK [FinishReason]. */
+internal fun GenAiFinishReason.toKt(): FinishReason =
   runCatching { FinishReason.valueOf(this.toString()) }.getOrDefault(FinishReason.OTHER)
 
-/** Converts an ADK [FinishReason] to a [com.google.genai.types.FinishReason] for the GenAI SDK. */
-internal fun FinishReason.toJava(): com.google.genai.types.FinishReason =
-  com.google.genai.types.FinishReason(this.name)
+/** Converts an ADK [FinishReason] to a [GenAiFinishReason] for the GenAI SDK. */
+internal fun FinishReason.toJava(): GenAiFinishReason = GenAiFinishReason(this.name)
 
 /** Converts an ADK [BlockedReason] to its equivalent [FinishReason]. */
-internal fun com.google.genai.types.BlockedReason.toFinishReason(): FinishReason =
+internal fun GenAiBlockedReason.toFinishReason(): FinishReason =
   when (this.knownEnum()) {
-    com.google.genai.types.BlockedReason.Known.SAFETY -> FinishReason.SAFETY
+    GenAiBlockedReason.Known.SAFETY -> FinishReason.SAFETY
     else -> FinishReason.OTHER
   }
 
-/**
- * Converts a [com.google.genai.types.ThinkingLevel] from the GenAI SDK to an ADK [ThinkingLevel].
- */
-internal fun com.google.genai.types.ThinkingLevel.toKt(): ThinkingLevel =
+/** Converts a [GenAiThinkingLevel] from the GenAI SDK to an ADK [ThinkingLevel]. */
+internal fun GenAiThinkingLevel.toKt(): ThinkingLevel =
   runCatching { ThinkingLevel.valueOf(this.toString()) }
     .getOrDefault(ThinkingLevel.THINKING_LEVEL_UNSPECIFIED)
 
-/**
- * Converts an ADK [ThinkingLevel] to a [com.google.genai.types.ThinkingLevel] for the GenAI SDK.
- */
-internal fun ThinkingLevel.toJava(): com.google.genai.types.ThinkingLevel =
-  com.google.genai.types.ThinkingLevel(this.name)
+/** Converts an ADK [ThinkingLevel] to a [GenAiThinkingLevel] for the GenAI SDK. */
+internal fun ThinkingLevel.toJava(): GenAiThinkingLevel = GenAiThinkingLevel(this.name)
 
-/**
- * Converts a [com.google.genai.types.MediaModality] from the GenAI SDK to an ADK [MediaModality].
- */
-internal fun com.google.genai.types.MediaModality.toKt(): MediaModality =
+/** Converts a [GenAiMediaModality] from the GenAI SDK to an ADK [MediaModality]. */
+internal fun GenAiMediaModality.toKt(): MediaModality =
   runCatching { MediaModality.valueOf(this.toString()) }
     .getOrDefault(MediaModality.MODALITY_UNSPECIFIED)
 
-/**
- * Converts an ADK [MediaModality] to a [com.google.genai.types.MediaModality] for the GenAI SDK.
- */
-internal fun MediaModality.toJava(): com.google.genai.types.MediaModality =
-  com.google.genai.types.MediaModality(this.name)
+/** Converts an ADK [MediaModality] to a [GenAiMediaModality] for the GenAI SDK. */
+internal fun MediaModality.toJava(): GenAiMediaModality = GenAiMediaModality(this.name)
 
-/** Converts a [com.google.genai.types.HarmCategory] from the GenAI SDK to an ADK [HarmCategory]. */
-internal fun com.google.genai.types.HarmCategory.toKt(): HarmCategory =
+/** Converts a [GenAiHarmCategory] from the GenAI SDK to an ADK [HarmCategory]. */
+internal fun GenAiHarmCategory.toKt(): HarmCategory =
   runCatching { HarmCategory.valueOf(this.toString()) }
     .getOrDefault(HarmCategory.HARM_CATEGORY_UNSPECIFIED)
 
-/** Converts an ADK [HarmCategory] to a [com.google.genai.types.HarmCategory] for the GenAI SDK. */
-internal fun HarmCategory.toJava(): com.google.genai.types.HarmCategory =
-  com.google.genai.types.HarmCategory(this.name)
+/** Converts an ADK [HarmCategory] to a [GenAiHarmCategory] for the GenAI SDK. */
+internal fun HarmCategory.toJava(): GenAiHarmCategory = GenAiHarmCategory(this.name)
 
-/**
- * Converts a [com.google.genai.types.HarmBlockThreshold] from the GenAI SDK to an ADK
- * [HarmBlockThreshold].
- */
-internal fun com.google.genai.types.HarmBlockThreshold.toKt(): HarmBlockThreshold =
+/** Converts a [GenAiHarmBlockThreshold] from the GenAI SDK to an ADK [HarmBlockThreshold]. */
+internal fun GenAiHarmBlockThreshold.toKt(): HarmBlockThreshold =
   runCatching { HarmBlockThreshold.valueOf(this.toString()) }
     .getOrDefault(HarmBlockThreshold.HARM_BLOCK_THRESHOLD_UNSPECIFIED)
 
-/**
- * Converts an ADK [HarmBlockThreshold] to a [com.google.genai.types.HarmBlockThreshold] for the
- * GenAI SDK.
- */
-internal fun HarmBlockThreshold.toJava(): com.google.genai.types.HarmBlockThreshold =
-  com.google.genai.types.HarmBlockThreshold(this.name)
+/** Converts an ADK [HarmBlockThreshold] to a [GenAiHarmBlockThreshold] for the GenAI SDK. */
+internal fun HarmBlockThreshold.toJava(): GenAiHarmBlockThreshold =
+  GenAiHarmBlockThreshold(this.name)
 
-/**
- * Converts a [com.google.genai.types.MediaResolution] from the GenAI SDK to an ADK
- * [MediaResolution].
- */
-internal fun com.google.genai.types.MediaResolution.toKt(): MediaResolution =
+/** Converts a [GenAiMediaResolution] from the GenAI SDK to an ADK [MediaResolution]. */
+internal fun GenAiMediaResolution.toKt(): MediaResolution =
   runCatching { MediaResolution.valueOf(this.toString()) }
     .getOrDefault(MediaResolution.MEDIA_RESOLUTION_UNSPECIFIED)
 
-/**
- * Converts an ADK [MediaResolution] to a [com.google.genai.types.MediaResolution] for the GenAI
- * SDK.
- */
-internal fun MediaResolution.toJava(): com.google.genai.types.MediaResolution =
-  com.google.genai.types.MediaResolution(this.name)
+/** Converts an ADK [MediaResolution] to a [GenAiMediaResolution] for the GenAI SDK. */
+internal fun MediaResolution.toJava(): GenAiMediaResolution = GenAiMediaResolution(this.name)
 
-/** Converts a [com.google.genai.types.ServiceTier] from the GenAI SDK to an ADK [ServiceTier]. */
-internal fun com.google.genai.types.ServiceTier.toKt(): ServiceTier =
+/** Converts a [GenAiServiceTier] from the GenAI SDK to an ADK [ServiceTier]. */
+internal fun GenAiServiceTier.toKt(): ServiceTier =
   runCatching { ServiceTier.valueOf(this.toString()) }.getOrDefault(ServiceTier.UNSPECIFIED)
 
-/** Converts an ADK [ServiceTier] to a [com.google.genai.types.ServiceTier] for the GenAI SDK. */
-internal fun ServiceTier.toJava(): com.google.genai.types.ServiceTier =
-  com.google.genai.types.ServiceTier(this.name)
+/** Converts an ADK [ServiceTier] to a [GenAiServiceTier] for the GenAI SDK. */
+internal fun ServiceTier.toJava(): GenAiServiceTier = GenAiServiceTier(this.name)

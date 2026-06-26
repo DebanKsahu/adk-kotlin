@@ -20,22 +20,60 @@
  */
 package com.google.adk.kt.types
 
+import com.google.genai.types.Blob as GenAiBlob
+import com.google.genai.types.Candidate as GenAiCandidate
+import com.google.genai.types.Citation as GenAiCitation
+import com.google.genai.types.CitationMetadata as GenAiCitationMetadata
+import com.google.genai.types.Content as GenAiContent
+import com.google.genai.types.FileData as GenAiFileData
+import com.google.genai.types.FunctionCall as GenAiFunctionCall
+import com.google.genai.types.FunctionCallingConfig as GenAiFunctionCallingConfig
+import com.google.genai.types.FunctionDeclaration as GenAiFunctionDeclaration
+import com.google.genai.types.FunctionResponse as GenAiFunctionResponse
+import com.google.genai.types.GenerateContentConfig as GenAiGenerateContentConfig
+import com.google.genai.types.GenerateContentResponse as GenAiGenerateContentResponse
+import com.google.genai.types.GenerateContentResponsePromptFeedback as GenAiGenerateContentResponsePromptFeedback
+import com.google.genai.types.GenerateContentResponseUsageMetadata as GenAiGenerateContentResponseUsageMetadata
+import com.google.genai.types.GoogleMaps as GenAiGoogleMaps
+import com.google.genai.types.GoogleSearch as GenAiGoogleSearch
+import com.google.genai.types.GroundingChunk as GenAiGroundingChunk
+import com.google.genai.types.GroundingChunkRetrievedContext as GenAiGroundingChunkRetrievedContext
+import com.google.genai.types.GroundingChunkWeb as GenAiGroundingChunkWeb
+import com.google.genai.types.GroundingMetadata as GenAiGroundingMetadata
+import com.google.genai.types.GroundingSupport as GenAiGroundingSupport
+import com.google.genai.types.LogprobsResult as GenAiLogprobsResult
+import com.google.genai.types.LogprobsResultCandidate as GenAiLogprobsResultCandidate
+import com.google.genai.types.LogprobsResultTopCandidates as GenAiLogprobsResultTopCandidates
+import com.google.genai.types.ModalityTokenCount as GenAiModalityTokenCount
+import com.google.genai.types.NullValue as GenAiNullValue
+import com.google.genai.types.Part as GenAiPart
+import com.google.genai.types.PartialArg as GenAiPartialArg
+import com.google.genai.types.RetrievalMetadata as GenAiRetrievalMetadata
+import com.google.genai.types.SafetySetting as GenAiSafetySetting
+import com.google.genai.types.Schema as GenAiSchema
+import com.google.genai.types.SearchEntryPoint as GenAiSearchEntryPoint
+import com.google.genai.types.Segment as GenAiSegment
+import com.google.genai.types.ThinkingConfig as GenAiThinkingConfig
+import com.google.genai.types.Tool as GenAiTool
+import com.google.genai.types.ToolConfig as GenAiToolConfig
+import com.google.genai.types.UrlContext as GenAiUrlContext
+import com.google.genai.types.VideoMetadata as GenAiVideoMetadata
 import kotlin.jvm.optionals.getOrNull
 import kotlin.time.toJavaDuration
 import kotlin.time.toKotlinDuration
 
 // --- Blob ---
-/** Converts a [com.google.genai.types.Blob] from the GenAI SDK to an ADK [Blob]. */
-internal fun com.google.genai.types.Blob.fromGenaiSdk(): Blob =
+/** Converts a [GenAiBlob] from the GenAI SDK to an ADK [Blob]. */
+internal fun GenAiBlob.fromGenaiSdk(): Blob =
   Blob(
     mimeType = mimeType().getOrNull(),
     displayName = displayName().getOrNull(),
     data = data().getOrNull(),
   )
 
-/** Converts an ADK [Blob] to a [com.google.genai.types.Blob] for the GenAI SDK. */
-internal fun Blob.toGenaiSdk(): com.google.genai.types.Blob =
-  com.google.genai.types.Blob.builder()
+/** Converts an ADK [Blob] to a [GenAiBlob] for the GenAI SDK. */
+internal fun Blob.toGenaiSdk(): GenAiBlob =
+  GenAiBlob.builder()
     .apply {
       this@toGenaiSdk.mimeType?.let { mimeType(it) }
       this@toGenaiSdk.displayName?.let { displayName(it) }
@@ -44,8 +82,8 @@ internal fun Blob.toGenaiSdk(): com.google.genai.types.Blob =
     .build()
 
 // --- Candidate ---
-/** Converts a [com.google.genai.types.Candidate] from the GenAI SDK to an ADK [Candidate]. */
-internal fun com.google.genai.types.Candidate.fromGenaiSdk(): Candidate =
+/** Converts a [GenAiCandidate] from the GenAI SDK to an ADK [Candidate]. */
+internal fun GenAiCandidate.fromGenaiSdk(): Candidate =
   Candidate(
     content = content().getOrNull()?.fromGenaiSdk() ?: Content(),
     finishReason = finishReason().getOrNull()?.toKt(),
@@ -56,9 +94,9 @@ internal fun com.google.genai.types.Candidate.fromGenaiSdk(): Candidate =
     logprobsResult = logprobsResult().getOrNull()?.fromGenaiSdk(),
   )
 
-/** Converts an ADK [Candidate] to a [com.google.genai.types.Candidate] for the GenAI SDK. */
-internal fun Candidate.toGenaiSdk(): com.google.genai.types.Candidate =
-  com.google.genai.types.Candidate.builder()
+/** Converts an ADK [Candidate] to a [GenAiCandidate] for the GenAI SDK. */
+internal fun Candidate.toGenaiSdk(): GenAiCandidate =
+  GenAiCandidate.builder()
     .apply {
       content(this@toGenaiSdk.content.toGenaiSdk())
       this@toGenaiSdk.finishReason?.let { finishReason(it.toJava()) }
@@ -71,19 +109,17 @@ internal fun Candidate.toGenaiSdk(): com.google.genai.types.Candidate =
     .build()
 
 // --- LogprobsResult ---
-/**
- * Converts a [com.google.genai.types.LogprobsResult] from the GenAI SDK to an ADK [LogprobsResult].
- */
-internal fun com.google.genai.types.LogprobsResult.fromGenaiSdk(): LogprobsResult =
+/** Converts a [GenAiLogprobsResult] from the GenAI SDK to an ADK [LogprobsResult]. */
+internal fun GenAiLogprobsResult.fromGenaiSdk(): LogprobsResult =
   LogprobsResult(
     chosenCandidates = chosenCandidates().getOrNull()?.map { it.fromGenaiSdk() },
     topCandidates = topCandidates().getOrNull()?.map { it.fromGenaiSdk() },
     logProbabilitySum = logProbabilitySum().getOrNull()?.toDouble(),
   )
 
-/** Converts an ADK [LogprobsResult] to a [com.google.genai.types.LogprobsResult] for the SDK. */
-internal fun LogprobsResult.toGenaiSdk(): com.google.genai.types.LogprobsResult =
-  com.google.genai.types.LogprobsResult.builder()
+/** Converts an ADK [LogprobsResult] to a [GenAiLogprobsResult] for the SDK. */
+internal fun LogprobsResult.toGenaiSdk(): GenAiLogprobsResult =
+  GenAiLogprobsResult.builder()
     .apply {
       this@toGenaiSdk.chosenCandidates?.let { chosenCandidates(it.map { c -> c.toGenaiSdk() }) }
       this@toGenaiSdk.topCandidates?.let { topCandidates(it.map { c -> c.toGenaiSdk() }) }
@@ -93,11 +129,9 @@ internal fun LogprobsResult.toGenaiSdk(): com.google.genai.types.LogprobsResult 
 
 // --- LogprobsResultCandidate ---
 /**
- * Converts a [com.google.genai.types.LogprobsResultCandidate] from the GenAI SDK to an ADK
- * [LogprobsResultCandidate].
+ * Converts a [GenAiLogprobsResultCandidate] from the GenAI SDK to an ADK [LogprobsResultCandidate].
  */
-internal fun com.google.genai.types.LogprobsResultCandidate.fromGenaiSdk():
-  LogprobsResultCandidate =
+internal fun GenAiLogprobsResultCandidate.fromGenaiSdk(): LogprobsResultCandidate =
   LogprobsResultCandidate(
     token = token().getOrNull(),
     tokenId = tokenId().getOrNull(),
@@ -105,11 +139,10 @@ internal fun com.google.genai.types.LogprobsResultCandidate.fromGenaiSdk():
   )
 
 /**
- * Converts an ADK [LogprobsResultCandidate] to a [com.google.genai.types.LogprobsResultCandidate]
- * for the GenAI SDK.
+ * Converts an ADK [LogprobsResultCandidate] to a [GenAiLogprobsResultCandidate] for the GenAI SDK.
  */
-internal fun LogprobsResultCandidate.toGenaiSdk(): com.google.genai.types.LogprobsResultCandidate =
-  com.google.genai.types.LogprobsResultCandidate.builder()
+internal fun LogprobsResultCandidate.toGenaiSdk(): GenAiLogprobsResultCandidate =
+  GenAiLogprobsResultCandidate.builder()
     .apply {
       this@toGenaiSdk.token?.let { token(it) }
       this@toGenaiSdk.tokenId?.let { tokenId(it) }
@@ -119,26 +152,24 @@ internal fun LogprobsResultCandidate.toGenaiSdk(): com.google.genai.types.Logpro
 
 // --- LogprobsResultTopCandidates ---
 /**
- * Converts a [com.google.genai.types.LogprobsResultTopCandidates] from the GenAI SDK to an ADK
+ * Converts a [GenAiLogprobsResultTopCandidates] from the GenAI SDK to an ADK
  * [LogprobsResultTopCandidates].
  */
-internal fun com.google.genai.types.LogprobsResultTopCandidates.fromGenaiSdk():
-  LogprobsResultTopCandidates =
+internal fun GenAiLogprobsResultTopCandidates.fromGenaiSdk(): LogprobsResultTopCandidates =
   LogprobsResultTopCandidates(candidates = candidates().getOrNull()?.map { it.fromGenaiSdk() })
 
 /**
- * Converts an ADK [LogprobsResultTopCandidates] to a
- * [com.google.genai.types.LogprobsResultTopCandidates] for the GenAI SDK.
+ * Converts an ADK [LogprobsResultTopCandidates] to a [GenAiLogprobsResultTopCandidates] for the
+ * GenAI SDK.
  */
-internal fun LogprobsResultTopCandidates.toGenaiSdk():
-  com.google.genai.types.LogprobsResultTopCandidates =
-  com.google.genai.types.LogprobsResultTopCandidates.builder()
+internal fun LogprobsResultTopCandidates.toGenaiSdk(): GenAiLogprobsResultTopCandidates =
+  GenAiLogprobsResultTopCandidates.builder()
     .apply { this@toGenaiSdk.candidates?.let { candidates(it.map { c -> c.toGenaiSdk() }) } }
     .build()
 
 // --- Citation ---
-/** Converts a [com.google.genai.types.Citation] from the GenAI SDK to an ADK [Citation]. */
-internal fun com.google.genai.types.Citation.fromGenaiSdk(): Citation =
+/** Converts a [GenAiCitation] from the GenAI SDK to an ADK [Citation]. */
+internal fun GenAiCitation.fromGenaiSdk(): Citation =
   Citation(
     title = title().getOrNull(),
     uri = uri().getOrNull(),
@@ -146,9 +177,9 @@ internal fun com.google.genai.types.Citation.fromGenaiSdk(): Citation =
     endIndex = endIndex().getOrNull(),
   )
 
-/** Converts an ADK [Citation] to a [com.google.genai.types.Citation] for the GenAI SDK. */
-internal fun Citation.toGenaiSdk(): com.google.genai.types.Citation =
-  com.google.genai.types.Citation.builder()
+/** Converts an ADK [Citation] to a [GenAiCitation] for the GenAI SDK. */
+internal fun Citation.toGenaiSdk(): GenAiCitation =
+  GenAiCitation.builder()
     .apply {
       this@toGenaiSdk.title?.let { title(it) }
       this@toGenaiSdk.uri?.let { uri(it) }
@@ -158,35 +189,29 @@ internal fun Citation.toGenaiSdk(): com.google.genai.types.Citation =
     .build()
 
 // --- CitationMetadata ---
-/**
- * Converts a [com.google.genai.types.CitationMetadata] from the GenAI SDK to an ADK
- * [CitationMetadata].
- */
-internal fun com.google.genai.types.CitationMetadata.fromGenaiSdk(): CitationMetadata =
+/** Converts a [GenAiCitationMetadata] from the GenAI SDK to an ADK [CitationMetadata]. */
+internal fun GenAiCitationMetadata.fromGenaiSdk(): CitationMetadata =
   CitationMetadata(
     citationSources = citations().getOrNull()?.map { it.fromGenaiSdk() } ?: emptyList()
   )
 
-/**
- * Converts an ADK [CitationMetadata] to a [com.google.genai.types.CitationMetadata] for the GenAI
- * SDK.
- */
-internal fun CitationMetadata.toGenaiSdk(): com.google.genai.types.CitationMetadata =
-  com.google.genai.types.CitationMetadata.builder()
+/** Converts an ADK [CitationMetadata] to a [GenAiCitationMetadata] for the GenAI SDK. */
+internal fun CitationMetadata.toGenaiSdk(): GenAiCitationMetadata =
+  GenAiCitationMetadata.builder()
     .apply { citations(this@toGenaiSdk.citationSources.map { it.toGenaiSdk() }) }
     .build()
 
 // --- Content ---
-/** Converts a [com.google.genai.types.Content] from the GenAI SDK to an ADK [Content]. */
-internal fun com.google.genai.types.Content.fromGenaiSdk(): Content =
+/** Converts a [GenAiContent] from the GenAI SDK to an ADK [Content]. */
+internal fun GenAiContent.fromGenaiSdk(): Content =
   Content(
     role = role().getOrNull(),
     parts = parts().getOrNull()?.map { it.fromGenaiSdk() } ?: emptyList(),
   )
 
-/** Converts an ADK [Content] to a [com.google.genai.types.Content] for the GenAI SDK. */
-internal fun Content.toGenaiSdk(): com.google.genai.types.Content =
-  com.google.genai.types.Content.builder()
+/** Converts an ADK [Content] to a [GenAiContent] for the GenAI SDK. */
+internal fun Content.toGenaiSdk(): GenAiContent =
+  GenAiContent.builder()
     .apply {
       this@toGenaiSdk.role?.let { role(it) }
       parts(this@toGenaiSdk.parts.map { it.toGenaiSdk() })
@@ -194,17 +219,17 @@ internal fun Content.toGenaiSdk(): com.google.genai.types.Content =
     .build()
 
 // --- FileData ---
-/** Converts a [com.google.genai.types.FileData] from the GenAI SDK to an ADK [FileData]. */
-internal fun com.google.genai.types.FileData.fromGenaiSdk(): FileData =
+/** Converts a [GenAiFileData] from the GenAI SDK to an ADK [FileData]. */
+internal fun GenAiFileData.fromGenaiSdk(): FileData =
   FileData(
     mimeType = mimeType().getOrNull(),
     displayName = displayName().getOrNull(),
     fileUri = fileUri().getOrNull(),
   )
 
-/** Converts an ADK [FileData] to a [com.google.genai.types.FileData] for the GenAI SDK. */
-internal fun FileData.toGenaiSdk(): com.google.genai.types.FileData =
-  com.google.genai.types.FileData.builder()
+/** Converts an ADK [FileData] to a [GenAiFileData] for the GenAI SDK. */
+internal fun FileData.toGenaiSdk(): GenAiFileData =
+  GenAiFileData.builder()
     .apply {
       this@toGenaiSdk.mimeType?.let { mimeType(it) }
       this@toGenaiSdk.displayName?.let { displayName(it) }
@@ -213,8 +238,8 @@ internal fun FileData.toGenaiSdk(): com.google.genai.types.FileData =
     .build()
 
 // --- FunctionCall ---
-/** Converts a [com.google.genai.types.FunctionCall] from the GenAI SDK to an ADK [FunctionCall]. */
-internal fun com.google.genai.types.FunctionCall.fromGenaiSdk(): FunctionCall =
+/** Converts a [GenAiFunctionCall] from the GenAI SDK to an ADK [FunctionCall]. */
+internal fun GenAiFunctionCall.fromGenaiSdk(): FunctionCall =
   FunctionCall(
     name = name().getOrNull() ?: "",
     args = args().getOrNull() ?: emptyMap(),
@@ -223,9 +248,9 @@ internal fun com.google.genai.types.FunctionCall.fromGenaiSdk(): FunctionCall =
     willContinue = willContinue().getOrNull(),
   )
 
-/** Converts an ADK [FunctionCall] to a [com.google.genai.types.FunctionCall] for the GenAI SDK. */
-internal fun FunctionCall.toGenaiSdk(): com.google.genai.types.FunctionCall =
-  com.google.genai.types.FunctionCall.builder()
+/** Converts an ADK [FunctionCall] to a [GenAiFunctionCall] for the GenAI SDK. */
+internal fun FunctionCall.toGenaiSdk(): GenAiFunctionCall =
+  GenAiFunctionCall.builder()
     .apply {
       name(this@toGenaiSdk.name)
       args(this@toGenaiSdk.args)
@@ -238,23 +263,17 @@ internal fun FunctionCall.toGenaiSdk(): com.google.genai.types.FunctionCall =
     .build()
 
 // --- FunctionDeclaration ---
-/**
- * Converts a [com.google.genai.types.FunctionDeclaration] from the GenAI SDK to an ADK
- * [FunctionDeclaration].
- */
-internal fun com.google.genai.types.FunctionDeclaration.fromGenaiSdk(): FunctionDeclaration =
+/** Converts a [GenAiFunctionDeclaration] from the GenAI SDK to an ADK [FunctionDeclaration]. */
+internal fun GenAiFunctionDeclaration.fromGenaiSdk(): FunctionDeclaration =
   FunctionDeclaration(
     name = name().get(),
     description = description().get(),
     parameters = parameters().getOrNull()?.toKtSchema(),
   )
 
-/**
- * Converts an ADK [FunctionDeclaration] to a [com.google.genai.types.FunctionDeclaration] for the
- * GenAI SDK.
- */
-internal fun FunctionDeclaration.toGenaiSdk(): com.google.genai.types.FunctionDeclaration =
-  com.google.genai.types.FunctionDeclaration.builder()
+/** Converts an ADK [FunctionDeclaration] to a [GenAiFunctionDeclaration] for the GenAI SDK. */
+internal fun FunctionDeclaration.toGenaiSdk(): GenAiFunctionDeclaration =
+  GenAiFunctionDeclaration.builder()
     .apply {
       name(this@toGenaiSdk.name)
       description(this@toGenaiSdk.description)
@@ -263,23 +282,17 @@ internal fun FunctionDeclaration.toGenaiSdk(): com.google.genai.types.FunctionDe
     .build()
 
 // --- FunctionResponse ---
-/**
- * Converts a [com.google.genai.types.FunctionResponse] from the GenAI SDK to an ADK
- * [FunctionResponse].
- */
-internal fun com.google.genai.types.FunctionResponse.fromGenaiSdk(): FunctionResponse =
+/** Converts a [GenAiFunctionResponse] from the GenAI SDK to an ADK [FunctionResponse]. */
+internal fun GenAiFunctionResponse.fromGenaiSdk(): FunctionResponse =
   FunctionResponse(
     name = name().get(),
     response = response().getOrNull() ?: emptyMap(),
     id = id().getOrNull(),
   )
 
-/**
- * Converts an ADK [FunctionResponse] to a [com.google.genai.types.FunctionResponse] for the GenAI
- * SDK.
- */
-internal fun FunctionResponse.toGenaiSdk(): com.google.genai.types.FunctionResponse =
-  com.google.genai.types.FunctionResponse.builder()
+/** Converts an ADK [FunctionResponse] to a [GenAiFunctionResponse] for the GenAI SDK. */
+internal fun FunctionResponse.toGenaiSdk(): GenAiFunctionResponse =
+  GenAiFunctionResponse.builder()
     .apply {
       name(this@toGenaiSdk.name)
       response(this@toGenaiSdk.response)
@@ -288,11 +301,8 @@ internal fun FunctionResponse.toGenaiSdk(): com.google.genai.types.FunctionRespo
     .build()
 
 // --- GenerateContentConfig ---
-/**
- * Converts a [com.google.genai.types.GenerateContentConfig] from the GenAI SDK to an ADK
- * [GenerateContentConfig].
- */
-internal fun com.google.genai.types.GenerateContentConfig.fromGenaiSdk(): GenerateContentConfig =
+/** Converts a [GenAiGenerateContentConfig] from the GenAI SDK to an ADK [GenerateContentConfig]. */
+internal fun GenAiGenerateContentConfig.fromGenaiSdk(): GenerateContentConfig =
   GenerateContentConfig(
     tools = tools().getOrNull()?.map { it.fromGenaiSdk() },
     labels = labels().getOrNull(),
@@ -315,12 +325,9 @@ internal fun com.google.genai.types.GenerateContentConfig.fromGenaiSdk(): Genera
     responseLogprobs = responseLogprobs().getOrNull(),
   )
 
-/**
- * Converts an ADK [GenerateContentConfig] to a [com.google.genai.types.GenerateContentConfig] for
- * the GenAI SDK.
- */
-internal fun GenerateContentConfig.toGenaiSdk(): com.google.genai.types.GenerateContentConfig =
-  com.google.genai.types.GenerateContentConfig.builder()
+/** Converts an ADK [GenerateContentConfig] to a [GenAiGenerateContentConfig] for the GenAI SDK. */
+internal fun GenerateContentConfig.toGenaiSdk(): GenAiGenerateContentConfig =
+  GenAiGenerateContentConfig.builder()
     .apply {
       this@toGenaiSdk.tools?.let { tools(it.map { t -> t.toGenaiSdk() }) }
       this@toGenaiSdk.labels?.let { labels(it) }
@@ -345,48 +352,38 @@ internal fun GenerateContentConfig.toGenaiSdk(): com.google.genai.types.Generate
     .build()
 
 // --- FunctionCallingConfig ---
-/**
- * Converts a [com.google.genai.types.FunctionCallingConfig] from the GenAI SDK to an ADK
- * [FunctionCallingConfig].
- */
-internal fun com.google.genai.types.FunctionCallingConfig.fromGenaiSdk(): FunctionCallingConfig =
+/** Converts a [GenAiFunctionCallingConfig] from the GenAI SDK to an ADK [FunctionCallingConfig]. */
+internal fun GenAiFunctionCallingConfig.fromGenaiSdk(): FunctionCallingConfig =
   FunctionCallingConfig(allowedFunctionNames = allowedFunctionNames().getOrNull())
 
-/**
- * Converts an ADK [FunctionCallingConfig] to a [com.google.genai.types.FunctionCallingConfig] for
- * the GenAI SDK.
- */
-internal fun FunctionCallingConfig.toGenaiSdk(): com.google.genai.types.FunctionCallingConfig =
-  com.google.genai.types.FunctionCallingConfig.builder()
+/** Converts an ADK [FunctionCallingConfig] to a [GenAiFunctionCallingConfig] for the GenAI SDK. */
+internal fun FunctionCallingConfig.toGenaiSdk(): GenAiFunctionCallingConfig =
+  GenAiFunctionCallingConfig.builder()
     .apply { this@toGenaiSdk.allowedFunctionNames?.let { allowedFunctionNames(it) } }
     .build()
 
 // --- ToolConfig ---
-/** Converts a [com.google.genai.types.ToolConfig] from the GenAI SDK to an ADK [ToolConfig]. */
-internal fun com.google.genai.types.ToolConfig.fromGenaiSdk(): ToolConfig =
+/** Converts a [GenAiToolConfig] from the GenAI SDK to an ADK [ToolConfig]. */
+internal fun GenAiToolConfig.fromGenaiSdk(): ToolConfig =
   ToolConfig(functionCallingConfig = functionCallingConfig().getOrNull()?.fromGenaiSdk())
 
-/** Converts an ADK [ToolConfig] to a [com.google.genai.types.ToolConfig] for the GenAI SDK. */
-internal fun ToolConfig.toGenaiSdk(): com.google.genai.types.ToolConfig =
-  com.google.genai.types.ToolConfig.builder()
+/** Converts an ADK [ToolConfig] to a [GenAiToolConfig] for the GenAI SDK. */
+internal fun ToolConfig.toGenaiSdk(): GenAiToolConfig =
+  GenAiToolConfig.builder()
     .apply { this@toGenaiSdk.functionCallingConfig?.let { functionCallingConfig(it.toGenaiSdk()) } }
     .build()
 
 // --- SafetySetting ---
-/**
- * Converts a [com.google.genai.types.SafetySetting] from the GenAI SDK to an ADK [SafetySetting].
- */
-internal fun com.google.genai.types.SafetySetting.fromGenaiSdk(): SafetySetting =
+/** Converts a [GenAiSafetySetting] from the GenAI SDK to an ADK [SafetySetting]. */
+internal fun GenAiSafetySetting.fromGenaiSdk(): SafetySetting =
   SafetySetting(
     category = category().getOrNull()?.toKt(),
     threshold = threshold().getOrNull()?.toKt(),
   )
 
-/**
- * Converts an ADK [SafetySetting] to a [com.google.genai.types.SafetySetting] for the GenAI SDK.
- */
-internal fun SafetySetting.toGenaiSdk(): com.google.genai.types.SafetySetting =
-  com.google.genai.types.SafetySetting.builder()
+/** Converts an ADK [SafetySetting] to a [GenAiSafetySetting] for the GenAI SDK. */
+internal fun SafetySetting.toGenaiSdk(): GenAiSafetySetting =
+  GenAiSafetySetting.builder()
     .apply {
       this@toGenaiSdk.category?.let { category(it.toJava()) }
       this@toGenaiSdk.threshold?.let { threshold(it.toJava()) }
@@ -395,11 +392,9 @@ internal fun SafetySetting.toGenaiSdk(): com.google.genai.types.SafetySetting =
 
 // --- GenerateContentResponse ---
 /**
- * Converts a [com.google.genai.types.GenerateContentResponse] from the GenAI SDK to an ADK
- * [GenerateContentResponse].
+ * Converts a [GenAiGenerateContentResponse] from the GenAI SDK to an ADK [GenerateContentResponse].
  */
-internal fun com.google.genai.types.GenerateContentResponse.fromGenaiSdk():
-  GenerateContentResponse =
+internal fun GenAiGenerateContentResponse.fromGenaiSdk(): GenerateContentResponse =
   GenerateContentResponse(
     candidates = candidates().getOrNull()?.map { it.fromGenaiSdk() } ?: emptyList(),
     promptFeedback = promptFeedback().getOrNull()?.fromGenaiSdk(),
@@ -408,11 +403,10 @@ internal fun com.google.genai.types.GenerateContentResponse.fromGenaiSdk():
   )
 
 /**
- * Converts an ADK [GenerateContentResponse] to a [com.google.genai.types.GenerateContentResponse]
- * for the GenAI SDK.
+ * Converts an ADK [GenerateContentResponse] to a [GenAiGenerateContentResponse] for the GenAI SDK.
  */
-internal fun GenerateContentResponse.toGenaiSdk(): com.google.genai.types.GenerateContentResponse =
-  com.google.genai.types.GenerateContentResponse.builder()
+internal fun GenerateContentResponse.toGenaiSdk(): GenAiGenerateContentResponse =
+  GenAiGenerateContentResponse.builder()
     .apply {
       candidates(this@toGenaiSdk.candidates.map { it.toGenaiSdk() })
       this@toGenaiSdk.promptFeedback?.let { promptFeedback(it.toGenaiSdk()) }
@@ -422,11 +416,8 @@ internal fun GenerateContentResponse.toGenaiSdk(): com.google.genai.types.Genera
     .build()
 
 // --- GroundingMetadata ---
-/**
- * Converts a [com.google.genai.types.GroundingMetadata] from the GenAI SDK to an ADK
- * [GroundingMetadata].
- */
-internal fun com.google.genai.types.GroundingMetadata.fromGenaiSdk(): GroundingMetadata =
+/** Converts a [GenAiGroundingMetadata] from the GenAI SDK to an ADK [GroundingMetadata]. */
+internal fun GenAiGroundingMetadata.fromGenaiSdk(): GroundingMetadata =
   GroundingMetadata(
     imageSearchQueries = imageSearchQueries().getOrNull() ?: emptyList(),
     groundingChunks = groundingChunks().getOrNull()?.map { it.fromGenaiSdk() },
@@ -436,12 +427,9 @@ internal fun com.google.genai.types.GroundingMetadata.fromGenaiSdk(): GroundingM
     retrievalMetadata = retrievalMetadata().getOrNull()?.fromGenaiSdk(),
   )
 
-/**
- * Converts an ADK [GroundingMetadata] to a [com.google.genai.types.GroundingMetadata] for the GenAI
- * SDK.
- */
-internal fun GroundingMetadata.toGenaiSdk(): com.google.genai.types.GroundingMetadata =
-  com.google.genai.types.GroundingMetadata.builder()
+/** Converts an ADK [GroundingMetadata] to a [GenAiGroundingMetadata] for the GenAI SDK. */
+internal fun GroundingMetadata.toGenaiSdk(): GenAiGroundingMetadata =
+  GenAiGroundingMetadata.builder()
     .apply {
       imageSearchQueries(this@toGenaiSdk.imageSearchQueries)
       this@toGenaiSdk.groundingChunks?.let { groundingChunks(it.map { c -> c.toGenaiSdk() }) }
@@ -453,18 +441,16 @@ internal fun GroundingMetadata.toGenaiSdk(): com.google.genai.types.GroundingMet
     .build()
 
 // --- GroundingChunk ---
-/**
- * Converts a [com.google.genai.types.GroundingChunk] from the GenAI SDK to an ADK [GroundingChunk].
- */
-internal fun com.google.genai.types.GroundingChunk.fromGenaiSdk(): GroundingChunk =
+/** Converts a [GenAiGroundingChunk] from the GenAI SDK to an ADK [GroundingChunk]. */
+internal fun GenAiGroundingChunk.fromGenaiSdk(): GroundingChunk =
   GroundingChunk(
     web = web().getOrNull()?.fromGenaiSdk(),
     retrievedContext = retrievedContext().getOrNull()?.fromGenaiSdk(),
   )
 
-/** Converts an ADK [GroundingChunk] to a [com.google.genai.types.GroundingChunk] for the SDK. */
-internal fun GroundingChunk.toGenaiSdk(): com.google.genai.types.GroundingChunk =
-  com.google.genai.types.GroundingChunk.builder()
+/** Converts an ADK [GroundingChunk] to a [GenAiGroundingChunk] for the SDK. */
+internal fun GroundingChunk.toGenaiSdk(): GenAiGroundingChunk =
+  GenAiGroundingChunk.builder()
     .apply {
       this@toGenaiSdk.web?.let { web(it.toGenaiSdk()) }
       this@toGenaiSdk.retrievedContext?.let { retrievedContext(it.toGenaiSdk()) }
@@ -472,22 +458,17 @@ internal fun GroundingChunk.toGenaiSdk(): com.google.genai.types.GroundingChunk 
     .build()
 
 // --- GroundingChunkWeb ---
-/**
- * Converts a [com.google.genai.types.GroundingChunkWeb] from the GenAI SDK to an ADK
- * [GroundingChunkWeb].
- */
-internal fun com.google.genai.types.GroundingChunkWeb.fromGenaiSdk(): GroundingChunkWeb =
+/** Converts a [GenAiGroundingChunkWeb] from the GenAI SDK to an ADK [GroundingChunkWeb]. */
+internal fun GenAiGroundingChunkWeb.fromGenaiSdk(): GroundingChunkWeb =
   GroundingChunkWeb(
     uri = uri().getOrNull(),
     title = title().getOrNull(),
     domain = domain().getOrNull(),
   )
 
-/**
- * Converts an ADK [GroundingChunkWeb] to a [com.google.genai.types.GroundingChunkWeb] for the SDK.
- */
-internal fun GroundingChunkWeb.toGenaiSdk(): com.google.genai.types.GroundingChunkWeb =
-  com.google.genai.types.GroundingChunkWeb.builder()
+/** Converts an ADK [GroundingChunkWeb] to a [GenAiGroundingChunkWeb] for the SDK. */
+internal fun GroundingChunkWeb.toGenaiSdk(): GenAiGroundingChunkWeb =
+  GenAiGroundingChunkWeb.builder()
     .apply {
       this@toGenaiSdk.uri?.let { uri(it) }
       this@toGenaiSdk.title?.let { title(it) }
@@ -497,11 +478,10 @@ internal fun GroundingChunkWeb.toGenaiSdk(): com.google.genai.types.GroundingChu
 
 // --- GroundingChunkRetrievedContext ---
 /**
- * Converts a [com.google.genai.types.GroundingChunkRetrievedContext] from the GenAI SDK to an ADK
+ * Converts a [GenAiGroundingChunkRetrievedContext] from the GenAI SDK to an ADK
  * [GroundingChunkRetrievedContext].
  */
-internal fun com.google.genai.types.GroundingChunkRetrievedContext.fromGenaiSdk():
-  GroundingChunkRetrievedContext =
+internal fun GenAiGroundingChunkRetrievedContext.fromGenaiSdk(): GroundingChunkRetrievedContext =
   GroundingChunkRetrievedContext(
     uri = uri().getOrNull(),
     title = title().getOrNull(),
@@ -509,12 +489,11 @@ internal fun com.google.genai.types.GroundingChunkRetrievedContext.fromGenaiSdk(
   )
 
 /**
- * Converts an ADK [GroundingChunkRetrievedContext] to a
- * [com.google.genai.types.GroundingChunkRetrievedContext] for the GenAI SDK.
+ * Converts an ADK [GroundingChunkRetrievedContext] to a [GenAiGroundingChunkRetrievedContext] for
+ * the GenAI SDK.
  */
-internal fun GroundingChunkRetrievedContext.toGenaiSdk():
-  com.google.genai.types.GroundingChunkRetrievedContext =
-  com.google.genai.types.GroundingChunkRetrievedContext.builder()
+internal fun GroundingChunkRetrievedContext.toGenaiSdk(): GenAiGroundingChunkRetrievedContext =
+  GenAiGroundingChunkRetrievedContext.builder()
     .apply {
       this@toGenaiSdk.uri?.let { uri(it) }
       this@toGenaiSdk.title?.let { title(it) }
@@ -523,22 +502,17 @@ internal fun GroundingChunkRetrievedContext.toGenaiSdk():
     .build()
 
 // --- GroundingSupport ---
-/**
- * Converts a [com.google.genai.types.GroundingSupport] from the GenAI SDK to an ADK
- * [GroundingSupport].
- */
-internal fun com.google.genai.types.GroundingSupport.fromGenaiSdk(): GroundingSupport =
+/** Converts a [GenAiGroundingSupport] from the GenAI SDK to an ADK [GroundingSupport]. */
+internal fun GenAiGroundingSupport.fromGenaiSdk(): GroundingSupport =
   GroundingSupport(
     segment = segment().getOrNull()?.fromGenaiSdk(),
     groundingChunkIndices = groundingChunkIndices().getOrNull(),
     confidenceScores = confidenceScores().getOrNull(),
   )
 
-/**
- * Converts an ADK [GroundingSupport] to a [com.google.genai.types.GroundingSupport] for the SDK.
- */
-internal fun GroundingSupport.toGenaiSdk(): com.google.genai.types.GroundingSupport =
-  com.google.genai.types.GroundingSupport.builder()
+/** Converts an ADK [GroundingSupport] to a [GenAiGroundingSupport] for the SDK. */
+internal fun GroundingSupport.toGenaiSdk(): GenAiGroundingSupport =
+  GenAiGroundingSupport.builder()
     .apply {
       this@toGenaiSdk.segment?.let { segment(it.toGenaiSdk()) }
       this@toGenaiSdk.groundingChunkIndices?.let { groundingChunkIndices(it) }
@@ -547,8 +521,8 @@ internal fun GroundingSupport.toGenaiSdk(): com.google.genai.types.GroundingSupp
     .build()
 
 // --- Segment ---
-/** Converts a [com.google.genai.types.Segment] from the GenAI SDK to an ADK [Segment]. */
-internal fun com.google.genai.types.Segment.fromGenaiSdk(): Segment =
+/** Converts a [GenAiSegment] from the GenAI SDK to an ADK [Segment]. */
+internal fun GenAiSegment.fromGenaiSdk(): Segment =
   Segment(
     startIndex = startIndex().getOrNull(),
     endIndex = endIndex().getOrNull(),
@@ -556,9 +530,9 @@ internal fun com.google.genai.types.Segment.fromGenaiSdk(): Segment =
     text = text().getOrNull(),
   )
 
-/** Converts an ADK [Segment] to a [com.google.genai.types.Segment] for the GenAI SDK. */
-internal fun Segment.toGenaiSdk(): com.google.genai.types.Segment =
-  com.google.genai.types.Segment.builder()
+/** Converts an ADK [Segment] to a [GenAiSegment] for the GenAI SDK. */
+internal fun Segment.toGenaiSdk(): GenAiSegment =
+  GenAiSegment.builder()
     .apply {
       this@toGenaiSdk.startIndex?.let { startIndex(it) }
       this@toGenaiSdk.endIndex?.let { endIndex(it) }
@@ -568,37 +542,26 @@ internal fun Segment.toGenaiSdk(): com.google.genai.types.Segment =
     .build()
 
 // --- SearchEntryPoint ---
-/**
- * Converts a [com.google.genai.types.SearchEntryPoint] from the GenAI SDK to an ADK
- * [SearchEntryPoint].
- */
-internal fun com.google.genai.types.SearchEntryPoint.fromGenaiSdk(): SearchEntryPoint =
+/** Converts a [GenAiSearchEntryPoint] from the GenAI SDK to an ADK [SearchEntryPoint]. */
+internal fun GenAiSearchEntryPoint.fromGenaiSdk(): SearchEntryPoint =
   SearchEntryPoint(renderedContent = renderedContent().getOrNull())
 
-/**
- * Converts an ADK [SearchEntryPoint] to a [com.google.genai.types.SearchEntryPoint] for the SDK.
- */
-internal fun SearchEntryPoint.toGenaiSdk(): com.google.genai.types.SearchEntryPoint =
-  com.google.genai.types.SearchEntryPoint.builder()
+/** Converts an ADK [SearchEntryPoint] to a [GenAiSearchEntryPoint] for the SDK. */
+internal fun SearchEntryPoint.toGenaiSdk(): GenAiSearchEntryPoint =
+  GenAiSearchEntryPoint.builder()
     .apply { this@toGenaiSdk.renderedContent?.let { renderedContent(it) } }
     .build()
 
 // --- RetrievalMetadata ---
-/**
- * Converts a [com.google.genai.types.RetrievalMetadata] from the GenAI SDK to an ADK
- * [RetrievalMetadata].
- */
-internal fun com.google.genai.types.RetrievalMetadata.fromGenaiSdk(): RetrievalMetadata =
+/** Converts a [GenAiRetrievalMetadata] from the GenAI SDK to an ADK [RetrievalMetadata]. */
+internal fun GenAiRetrievalMetadata.fromGenaiSdk(): RetrievalMetadata =
   RetrievalMetadata(
     googleSearchDynamicRetrievalScore = googleSearchDynamicRetrievalScore().getOrNull()
   )
 
-/**
- * Converts an ADK [RetrievalMetadata] to a [com.google.genai.types.RetrievalMetadata] for the GenAI
- * SDK.
- */
-internal fun RetrievalMetadata.toGenaiSdk(): com.google.genai.types.RetrievalMetadata =
-  com.google.genai.types.RetrievalMetadata.builder()
+/** Converts an ADK [RetrievalMetadata] to a [GenAiRetrievalMetadata] for the GenAI SDK. */
+internal fun RetrievalMetadata.toGenaiSdk(): GenAiRetrievalMetadata =
+  GenAiRetrievalMetadata.builder()
     .apply {
       this@toGenaiSdk.googleSearchDynamicRetrievalScore?.let {
         googleSearchDynamicRetrievalScore(it)
@@ -608,23 +571,21 @@ internal fun RetrievalMetadata.toGenaiSdk(): com.google.genai.types.RetrievalMet
 
 // --- PromptFeedback ---
 /**
- * Converts a [com.google.genai.types.GenerateContentResponsePromptFeedback] from the GenAI SDK to
- * an ADK [PromptFeedback].
+ * Converts a [GenAiGenerateContentResponsePromptFeedback] from the GenAI SDK to an ADK
+ * [PromptFeedback].
  */
-internal fun com.google.genai.types.GenerateContentResponsePromptFeedback.fromGenaiSdk():
-  PromptFeedback =
+internal fun GenAiGenerateContentResponsePromptFeedback.fromGenaiSdk(): PromptFeedback =
   PromptFeedback(
     blockReason = blockReason().getOrNull()?.toKt(),
     blockReasonMessage = blockReasonMessage().getOrNull(),
   )
 
 /**
- * Converts an ADK [PromptFeedback] to a
- * [com.google.genai.types.GenerateContentResponsePromptFeedback] for the GenAI SDK.
+ * Converts an ADK [PromptFeedback] to a [GenAiGenerateContentResponsePromptFeedback] for the GenAI
+ * SDK.
  */
-internal fun PromptFeedback.toGenaiSdk():
-  com.google.genai.types.GenerateContentResponsePromptFeedback =
-  com.google.genai.types.GenerateContentResponsePromptFeedback.builder()
+internal fun PromptFeedback.toGenaiSdk(): GenAiGenerateContentResponsePromptFeedback =
+  GenAiGenerateContentResponsePromptFeedback.builder()
     .apply {
       this@toGenaiSdk.blockReason?.let { blockReason(it.toJava()) }
       this@toGenaiSdk.blockReasonMessage?.let { blockReasonMessage(it) }
@@ -632,30 +593,28 @@ internal fun PromptFeedback.toGenaiSdk():
     .build()
 
 // --- GoogleMaps ---
-/** Converts a [com.google.genai.types.GoogleMaps] from the GenAI SDK to an ADK [GoogleMaps]. */
-internal fun com.google.genai.types.GoogleMaps.fromGenaiSdk(): GoogleMaps =
+/** Converts a [GenAiGoogleMaps] from the GenAI SDK to an ADK [GoogleMaps]. */
+internal fun GenAiGoogleMaps.fromGenaiSdk(): GoogleMaps =
   GoogleMaps(enableWidget = enableWidget().getOrNull())
 
-/** Converts an ADK [GoogleMaps] to a [com.google.genai.types.GoogleMaps] for the GenAI SDK. */
-internal fun GoogleMaps.toGenaiSdk(): com.google.genai.types.GoogleMaps =
-  com.google.genai.types.GoogleMaps.builder()
-    .apply { this@toGenaiSdk.enableWidget?.let { enableWidget(it) } }
-    .build()
+/** Converts an ADK [GoogleMaps] to a [GenAiGoogleMaps] for the GenAI SDK. */
+internal fun GoogleMaps.toGenaiSdk(): GenAiGoogleMaps =
+  GenAiGoogleMaps.builder().apply { this@toGenaiSdk.enableWidget?.let { enableWidget(it) } }.build()
 
 // --- GoogleSearch ---
-/** Converts a [com.google.genai.types.GoogleSearch] from the GenAI SDK to an ADK [GoogleSearch]. */
-internal fun com.google.genai.types.GoogleSearch.fromGenaiSdk(): GoogleSearch =
+/** Converts a [GenAiGoogleSearch] from the GenAI SDK to an ADK [GoogleSearch]. */
+internal fun GenAiGoogleSearch.fromGenaiSdk(): GoogleSearch =
   GoogleSearch(excludeDomains = excludeDomains().getOrNull() ?: emptyList())
 
-/** Converts an ADK [GoogleSearch] to a [com.google.genai.types.GoogleSearch] for the GenAI SDK. */
-internal fun GoogleSearch.toGenaiSdk(): com.google.genai.types.GoogleSearch =
-  com.google.genai.types.GoogleSearch.builder()
+/** Converts an ADK [GoogleSearch] to a [GenAiGoogleSearch] for the GenAI SDK. */
+internal fun GoogleSearch.toGenaiSdk(): GenAiGoogleSearch =
+  GenAiGoogleSearch.builder()
     .apply { this@toGenaiSdk.excludeDomains.takeIf { it.isNotEmpty() }?.let { excludeDomains(it) } }
     .build()
 
 // --- Schema ---
-/** Converts a [com.google.genai.types.Schema] from the GenAI SDK to an ADK [Schema]. */
-internal fun com.google.genai.types.Schema.toKtSchema(): Schema =
+/** Converts a [GenAiSchema] from the GenAI SDK to an ADK [Schema]. */
+internal fun GenAiSchema.toKtSchema(): Schema =
   Schema(
     type = type().getOrNull()?.toString()?.let { Type.valueOf(it) },
     properties = properties().getOrNull()?.mapValues { it.value.toKtSchema() },
@@ -665,9 +624,9 @@ internal fun com.google.genai.types.Schema.toKtSchema(): Schema =
     enum = enum_().getOrNull(),
   )
 
-/** Converts an ADK [Schema] to a [com.google.genai.types.Schema] for the GenAI SDK. */
-internal fun Schema.toGenAiSchema(): com.google.genai.types.Schema =
-  com.google.genai.types.Schema.builder()
+/** Converts an ADK [Schema] to a [GenAiSchema] for the GenAI SDK. */
+internal fun Schema.toGenAiSchema(): GenAiSchema =
+  GenAiSchema.builder()
     .apply {
       this@toGenAiSchema.type?.let { type(it.name) }
       this@toGenAiSchema.properties?.let { props ->
@@ -681,16 +640,15 @@ internal fun Schema.toGenAiSchema(): com.google.genai.types.Schema =
     .build()
 
 // --- UrlContext ---
-/** Converts a [com.google.genai.types.UrlContext] from the GenAI SDK to an ADK [UrlContext]. */
-internal fun com.google.genai.types.UrlContext.fromGenaiSdk(): UrlContext = UrlContext()
+/** Converts a [GenAiUrlContext] from the GenAI SDK to an ADK [UrlContext]. */
+internal fun GenAiUrlContext.fromGenaiSdk(): UrlContext = UrlContext()
 
-/** Converts an ADK [UrlContext] to a [com.google.genai.types.UrlContext] for the GenAI SDK. */
-internal fun UrlContext.toGenaiSdk(): com.google.genai.types.UrlContext =
-  com.google.genai.types.UrlContext.builder().build()
+/** Converts an ADK [UrlContext] to a [GenAiUrlContext] for the GenAI SDK. */
+internal fun UrlContext.toGenaiSdk(): GenAiUrlContext = GenAiUrlContext.builder().build()
 
 // --- Tool ---
-/** Converts a [com.google.genai.types.Tool] from the GenAI SDK to an ADK [Tool]. */
-internal fun com.google.genai.types.Tool.fromGenaiSdk(): Tool =
+/** Converts a [GenAiTool] from the GenAI SDK to an ADK [Tool]. */
+internal fun GenAiTool.fromGenaiSdk(): Tool =
   Tool(
     functionDeclarations = functionDeclarations().getOrNull()?.map { it.fromGenaiSdk() },
     googleSearch = googleSearch().getOrNull()?.fromGenaiSdk(),
@@ -698,9 +656,9 @@ internal fun com.google.genai.types.Tool.fromGenaiSdk(): Tool =
     urlContext = urlContext().getOrNull()?.fromGenaiSdk(),
   )
 
-/** Converts an ADK [Tool] to a [com.google.genai.types.Tool] for the GenAI SDK. */
-internal fun Tool.toGenaiSdk(): com.google.genai.types.Tool =
-  com.google.genai.types.Tool.builder()
+/** Converts an ADK [Tool] to a [GenAiTool] for the GenAI SDK. */
+internal fun Tool.toGenaiSdk(): GenAiTool =
+  GenAiTool.builder()
     .apply {
       this@toGenaiSdk.functionDeclarations?.let {
         functionDeclarations(it.map { f -> f.toGenaiSdk() })
@@ -712,22 +670,16 @@ internal fun Tool.toGenaiSdk(): com.google.genai.types.Tool =
     .build()
 
 // --- ModalityTokenCount ---
-/**
- * Converts a [com.google.genai.types.ModalityTokenCount] from the GenAI SDK to an ADK
- * [ModalityTokenCount].
- */
-internal fun com.google.genai.types.ModalityTokenCount.fromGenaiSdk(): ModalityTokenCount =
+/** Converts a [GenAiModalityTokenCount] from the GenAI SDK to an ADK [ModalityTokenCount]. */
+internal fun GenAiModalityTokenCount.fromGenaiSdk(): ModalityTokenCount =
   ModalityTokenCount(
     modality = modality().getOrNull()?.toKt(),
     tokenCount = tokenCount().getOrNull(),
   )
 
-/**
- * Converts an ADK [ModalityTokenCount] to a [com.google.genai.types.ModalityTokenCount] for the
- * GenAI SDK.
- */
-internal fun ModalityTokenCount.toGenaiSdk(): com.google.genai.types.ModalityTokenCount =
-  com.google.genai.types.ModalityTokenCount.builder()
+/** Converts an ADK [ModalityTokenCount] to a [GenAiModalityTokenCount] for the GenAI SDK. */
+internal fun ModalityTokenCount.toGenaiSdk(): GenAiModalityTokenCount =
+  GenAiModalityTokenCount.builder()
     .apply {
       this@toGenaiSdk.modality?.let { modality(it.toJava()) }
       this@toGenaiSdk.tokenCount?.let { tokenCount(it) }
@@ -736,11 +688,10 @@ internal fun ModalityTokenCount.toGenaiSdk(): com.google.genai.types.ModalityTok
 
 // --- UsageMetadata ---
 /**
- * Converts a [com.google.genai.types.GenerateContentResponseUsageMetadata] from the GenAI SDK to an
- * ADK [UsageMetadata].
+ * Converts a [GenAiGenerateContentResponseUsageMetadata] from the GenAI SDK to an ADK
+ * [UsageMetadata].
  */
-internal fun com.google.genai.types.GenerateContentResponseUsageMetadata.fromGenaiSdk():
-  UsageMetadata =
+internal fun GenAiGenerateContentResponseUsageMetadata.fromGenaiSdk(): UsageMetadata =
   UsageMetadata(
     promptTokenCount = promptTokenCount().getOrNull(),
     candidatesTokenCount = candidatesTokenCount().getOrNull(),
@@ -752,12 +703,11 @@ internal fun com.google.genai.types.GenerateContentResponseUsageMetadata.fromGen
   )
 
 /**
- * Converts an ADK [UsageMetadata] to a
- * [com.google.genai.types.GenerateContentResponseUsageMetadata] for the GenAI SDK.
+ * Converts an ADK [UsageMetadata] to a [GenAiGenerateContentResponseUsageMetadata] for the GenAI
+ * SDK.
  */
-internal fun UsageMetadata.toGenaiSdk():
-  com.google.genai.types.GenerateContentResponseUsageMetadata =
-  com.google.genai.types.GenerateContentResponseUsageMetadata.builder()
+internal fun UsageMetadata.toGenaiSdk(): GenAiGenerateContentResponseUsageMetadata =
+  GenAiGenerateContentResponseUsageMetadata.builder()
     .apply {
       this@toGenaiSdk.promptTokenCount?.let { promptTokenCount(it) }
       this@toGenaiSdk.candidatesTokenCount?.let { candidatesTokenCount(it) }
@@ -774,8 +724,8 @@ internal fun UsageMetadata.toGenaiSdk():
     .build()
 
 // --- Part ---
-/** Converts a [com.google.genai.types.Part] from the GenAI SDK to an ADK [Part]. */
-internal fun com.google.genai.types.Part.fromGenaiSdk(): Part =
+/** Converts a [GenAiPart] from the GenAI SDK to an ADK [Part]. */
+internal fun GenAiPart.fromGenaiSdk(): Part =
   Part(
     text = text().getOrNull(),
     inlineData = inlineData().getOrNull()?.fromGenaiSdk(),
@@ -788,9 +738,9 @@ internal fun com.google.genai.types.Part.fromGenaiSdk(): Part =
     partMetadata = partMetadata().getOrNull(),
   )
 
-/** Converts an ADK [Part] to a [com.google.genai.types.Part] for the GenAI SDK. */
-internal fun Part.toGenaiSdk(): com.google.genai.types.Part =
-  com.google.genai.types.Part.builder()
+/** Converts an ADK [Part] to a [GenAiPart] for the GenAI SDK. */
+internal fun Part.toGenaiSdk(): GenAiPart =
+  GenAiPart.builder()
     .apply {
       this@toGenaiSdk.text?.let { text(it) }
       this@toGenaiSdk.inlineData?.let { inlineData(it.toGenaiSdk()) }
@@ -805,21 +755,17 @@ internal fun Part.toGenaiSdk(): com.google.genai.types.Part =
     .build()
 
 // --- VideoMetadata ---
-/**
- * Converts a [com.google.genai.types.VideoMetadata] from the GenAI SDK to an ADK [VideoMetadata].
- */
-internal fun com.google.genai.types.VideoMetadata.fromGenaiSdk(): VideoMetadata =
+/** Converts a [GenAiVideoMetadata] from the GenAI SDK to an ADK [VideoMetadata]. */
+internal fun GenAiVideoMetadata.fromGenaiSdk(): VideoMetadata =
   VideoMetadata(
     startOffset = startOffset().getOrNull()?.toKotlinDuration(),
     endOffset = endOffset().getOrNull()?.toKotlinDuration(),
     fps = fps().getOrNull(),
   )
 
-/**
- * Converts an ADK [VideoMetadata] to a [com.google.genai.types.VideoMetadata] for the GenAI SDK.
- */
-internal fun VideoMetadata.toGenaiSdk(): com.google.genai.types.VideoMetadata =
-  com.google.genai.types.VideoMetadata.builder()
+/** Converts an ADK [VideoMetadata] to a [GenAiVideoMetadata] for the GenAI SDK. */
+internal fun VideoMetadata.toGenaiSdk(): GenAiVideoMetadata =
+  GenAiVideoMetadata.builder()
     .apply {
       this@toGenaiSdk.startOffset?.let { startOffset(it.toJavaDuration()) }
       this@toGenaiSdk.endOffset?.let { endOffset(it.toJavaDuration()) }
@@ -828,8 +774,8 @@ internal fun VideoMetadata.toGenaiSdk(): com.google.genai.types.VideoMetadata =
     .build()
 
 // --- PartialArg ---
-/** Converts a [com.google.genai.types.PartialArg] from the GenAI SDK to an ADK [PartialArg]. */
-internal fun com.google.genai.types.PartialArg.fromGenaiSdk(): PartialArg =
+/** Converts a [GenAiPartialArg] from the GenAI SDK to an ADK [PartialArg]. */
+internal fun GenAiPartialArg.fromGenaiSdk(): PartialArg =
   PartialArg(
     value =
       boolValue().getOrNull()?.let { PartialArgValue.BoolValue(it) }
@@ -840,15 +786,15 @@ internal fun com.google.genai.types.PartialArg.fromGenaiSdk(): PartialArg =
     willContinue = willContinue().getOrNull(),
   )
 
-/** Converts an ADK [PartialArg] to a [com.google.genai.types.PartialArg] for the GenAI SDK. */
-internal fun PartialArg.toGenaiSdk(): com.google.genai.types.PartialArg =
-  com.google.genai.types.PartialArg.builder()
+/** Converts an ADK [PartialArg] to a [GenAiPartialArg] for the GenAI SDK. */
+internal fun PartialArg.toGenaiSdk(): GenAiPartialArg =
+  GenAiPartialArg.builder()
     .apply {
       when (val value = this@toGenaiSdk.value) {
         is PartialArgValue.BoolValue -> boolValue(value.value)
         is PartialArgValue.NumberValue -> numberValue(value.value)
         is PartialArgValue.StringValue -> stringValue(value.value)
-        is PartialArgValue.NullValue -> nullValue(com.google.genai.types.NullValue.Known.NULL_VALUE)
+        is PartialArgValue.NullValue -> nullValue(GenAiNullValue.Known.NULL_VALUE)
         null -> {}
       }
       this@toGenaiSdk.jsonPath?.let { jsonPath(it) }
@@ -857,21 +803,17 @@ internal fun PartialArg.toGenaiSdk(): com.google.genai.types.PartialArg =
     .build()
 
 // --- ThinkingConfig ---
-/**
- * Converts a [com.google.genai.types.ThinkingConfig] from the GenAI SDK to an ADK [ThinkingConfig].
- */
-internal fun com.google.genai.types.ThinkingConfig.fromGenaiSdk(): ThinkingConfig =
+/** Converts a [GenAiThinkingConfig] from the GenAI SDK to an ADK [ThinkingConfig]. */
+internal fun GenAiThinkingConfig.fromGenaiSdk(): ThinkingConfig =
   ThinkingConfig(
     includeThoughts = includeThoughts().getOrNull(),
     thinkingBudget = thinkingBudget().getOrNull(),
     thinkingLevel = thinkingLevel().getOrNull()?.toKt(),
   )
 
-/**
- * Converts an ADK [ThinkingConfig] to a [com.google.genai.types.ThinkingConfig] for the GenAI SDK.
- */
-internal fun ThinkingConfig.toGenaiSdk(): com.google.genai.types.ThinkingConfig =
-  com.google.genai.types.ThinkingConfig.builder()
+/** Converts an ADK [ThinkingConfig] to a [GenAiThinkingConfig] for the GenAI SDK. */
+internal fun ThinkingConfig.toGenaiSdk(): GenAiThinkingConfig =
+  GenAiThinkingConfig.builder()
     .apply {
       this@toGenaiSdk.includeThoughts?.let { includeThoughts(it) }
       this@toGenaiSdk.thinkingBudget?.let { thinkingBudget(it) }

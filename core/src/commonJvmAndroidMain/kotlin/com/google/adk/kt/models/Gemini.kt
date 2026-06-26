@@ -26,7 +26,9 @@ import com.google.adk.kt.types.fromGenaiSdk
 import com.google.adk.kt.types.toGenaiSdk
 import com.google.common.annotations.VisibleForTesting
 import com.google.genai.Client
+import com.google.genai.types.Content as GenAiContent
 import com.google.genai.types.GenerateContentConfig
+import com.google.genai.types.GenerateContentResponse as GenAiGenerateContentResponse
 import com.google.genai.types.HttpOptions
 import kotlin.jvm.JvmOverloads
 import kotlinx.coroutines.flow.Flow
@@ -53,32 +55,31 @@ class Gemini(
   interface GeminiModels {
     fun generateContentStream(
       model: String,
-      contents: List<com.google.genai.types.Content>,
+      contents: List<GenAiContent>,
       config: com.google.genai.types.GenerateContentConfig,
-    ): Iterable<com.google.genai.types.GenerateContentResponse>
+    ): Iterable<GenAiGenerateContentResponse>
 
     fun generateContent(
       model: String,
-      contents: List<com.google.genai.types.Content>,
+      contents: List<GenAiContent>,
       config: com.google.genai.types.GenerateContentConfig,
-    ): com.google.genai.types.GenerateContentResponse
+    ): GenAiGenerateContentResponse
   }
 
   @VisibleForTesting
   class RealGeminiModels(private val delegate: com.google.genai.Models) : GeminiModels {
     override fun generateContentStream(
       model: String,
-      contents: List<com.google.genai.types.Content>,
+      contents: List<GenAiContent>,
       config: com.google.genai.types.GenerateContentConfig,
-    ): Iterable<com.google.genai.types.GenerateContentResponse> =
+    ): Iterable<GenAiGenerateContentResponse> =
       delegate.generateContentStream(model, contents, config)
 
     override fun generateContent(
       model: String,
-      contents: List<com.google.genai.types.Content>,
+      contents: List<GenAiContent>,
       config: com.google.genai.types.GenerateContentConfig,
-    ): com.google.genai.types.GenerateContentResponse =
-      delegate.generateContent(model, contents, config)
+    ): GenAiGenerateContentResponse = delegate.generateContent(model, contents, config)
   }
 
   /**
