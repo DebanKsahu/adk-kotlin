@@ -16,22 +16,18 @@
 
 package com.google.adk.kt.telemetry
 
+import com.google.adk.kt.platform.getEnv
+
 /**
  * Global configuration for ADK telemetry behavior.
  *
- * This is a singleton to maintain architectural parity with the Java and Python ADKs. Note that the
- * default for [captureMessageContent] intentionally **diverges** from those ADKs: Python/Java
- * default message-content capture to ON (`true`) for backward compatibility, whereas the Kotlin ADK
- * keeps it OFF (`false`) by default to avoid recording PII or large payloads in spans. Callers opt
- * in explicitly (for example, the adk-web dev server).
- *
- * @property captureMessageContent Whether to capture raw prompts and payloads into traces. Defaults
- *   to false (diverging from Python/Java, which default to true) to prevent PII leakage and OOM
- *   errors; callers opt in explicitly. This is marked as @Volatile to ensure visibility across
- *   concurrent agent executions.
+ * @property captureMessageContent Whether to capture raw prompts and payloads into spans. Seeded at
+ *   startup from the [ADK_CAPTURE_MESSAGE_CONTENT_IN_SPANS] env var (`true`/`1` enables it);
+ *   defaults to `false` when unset, diverging from Python/Java/JS (which default to `true`) to
+ *   avoid recording PII or large payloads. `@Volatile` for cross-thread visibility.
  */
 object TelemetryConfig {
-  @Volatile var captureMessageContent: Boolean = false
+  @Volatile var captureMessageContent: Boolean = defaultCaptureMessageContent()
 }
 
 /** Placeholder emitted for content payloads when message-content capture is disabled. */
@@ -47,3 +43,32 @@ internal const val EMPTY_JSON: String = "{}"
  */
 internal fun capturedJson(payload: () -> Any?): String =
   if (TelemetryConfig.captureMessageContent) TracePayloadFormatter.format(payload()) else EMPTY_JSON
+
+/**
+ * Name of the ADK environment variable that toggles capturing prompt/response content in spans.
+ *
+ * Matches the variable read by Python (`_should_add_request_response_to_spans`), Java, and JS ADK.
+ * Unlike those ADKs (which default capture ON when the variable is unset), the Kotlin ADK only
+ * enables capture when this variable is explicitly set to `true`/`1`; see [TelemetryConfig].
+ */
+internal const val ADK_CAPTURE_MESSAGE_CONTENT_IN_SPANS = "ADK_CAPTURE_MESSAGE_CONTENT_IN_SPANS"
+
+/** Environment values (case-insensitive, surrounding whitespace ignored) that enable capture. */
+private val CAPTURE_ENABLED_VALUES = setOf("true", "1")
+
+/**
+ * Resolves the startup default for [TelemetryConfig.captureMessageContent] from the environment.
+ */
+internal fun defaultCaptureMessageContent(): Boolean =
+  parseCaptureMessageContent(getEnv(ADK_CAPTURE_MESSAGE_CONTENT_IN_SPANS))
+
+/**
+ * Parses a raw [ADK_CAPTURE_MESSAGE_CONTENT_IN_SPANS] value into the capture flag.
+ *
+ * Returns true only for `true`/`1` (case-insensitive, surrounding whitespace ignored). A null
+ * (unset) value or any other string returns false, preserving the Kotlin ADK's safe default.
+ */
+internal fun parseCaptureMessageContent(rawValue: String?): Boolean {
+  val normalized = rawValue?.trim()?.lowercase() ?: return false
+  return normalized in CAPTURE_ENABLED_VALUES
+}

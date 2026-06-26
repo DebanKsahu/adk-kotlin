@@ -38,4 +38,44 @@ class TelemetryConfigTest {
     TelemetryConfig.captureMessageContent = true
     assertTrue(TelemetryConfig.captureMessageContent)
   }
+
+  @Test
+  fun parseCaptureMessageContent_unset_isFalse() {
+    assertFalse(parseCaptureMessageContent(null))
+  }
+
+  @Test
+  fun parseCaptureMessageContent_true_isTrue() {
+    assertTrue(parseCaptureMessageContent("true"))
+  }
+
+  @Test
+  fun parseCaptureMessageContent_one_isTrue() {
+    assertTrue(parseCaptureMessageContent("1"))
+  }
+
+  @Test
+  fun parseCaptureMessageContent_mixedCaseAndSurroundingWhitespace_isTrue() {
+    assertTrue(parseCaptureMessageContent("  TrUe "))
+  }
+
+  @Test
+  fun parseCaptureMessageContent_false_isFalse() {
+    assertFalse(parseCaptureMessageContent("false"))
+  }
+
+  @Test
+  fun parseCaptureMessageContent_zero_isFalse() {
+    assertFalse(parseCaptureMessageContent("0"))
+  }
+
+  @Test
+  fun parseCaptureMessageContent_blank_isFalse() {
+    assertFalse(parseCaptureMessageContent("   "))
+  }
+
+  @Test
+  fun parseCaptureMessageContent_unrecognizedValue_isFalse() {
+    assertFalse(parseCaptureMessageContent("yes"))
+  }
 }
