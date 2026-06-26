@@ -117,7 +117,7 @@ internal fun buildValidatedFrontmatter(
         frontmatterMap["allowed-tools"] as? String ?: frontmatterMap["allowed_tools"] as? String,
       metadata =
         (frontmatterMap["metadata"] as? Map<*, *>)
-          ?.mapNotNull { (k, v) -> if (k is String && v is String) k to v else null }
+          ?.mapNotNull { (k, v) -> if (k is String) k to v else null }
           ?.toMap() ?: emptyMap(),
     )
   } catch (e: IllegalArgumentException) {

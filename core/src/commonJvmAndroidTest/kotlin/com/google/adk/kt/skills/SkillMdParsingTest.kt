@@ -215,7 +215,7 @@ class SkillMdParsingTest {
   }
 
   @Test
-  fun buildValidatedFrontmatter_metadataWithNonStringEntries_areDropped() {
+  fun buildValidatedFrontmatter_metadataWithNonStringValues_areRetained() {
     val fm =
       buildValidatedFrontmatter(
         skillName = "skill-a",
@@ -223,7 +223,24 @@ class SkillMdParsingTest {
           mapOf(
             "name" to "skill-a",
             "description" to "d",
-            "metadata" to mapOf("ok" to "v", "bad" to 42, 7 to "also-bad"),
+            "metadata" to mapOf("str" to "v", "int" to 42, "bool" to true, "list" to listOf(1, 2)),
+          ),
+      )
+
+    assertThat(fm.metadata)
+      .containsExactly("str", "v", "int", 42, "bool", true, "list", listOf(1, 2))
+  }
+
+  @Test
+  fun buildValidatedFrontmatter_metadataWithNonStringKeys_areDropped() {
+    val fm =
+      buildValidatedFrontmatter(
+        skillName = "skill-a",
+        frontmatterMap =
+          mapOf(
+            "name" to "skill-a",
+            "description" to "d",
+            "metadata" to mapOf("ok" to "v", 7 to "also-bad"),
           ),
       )
 

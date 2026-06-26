@@ -38,7 +38,7 @@ data class Frontmatter(
   val license: String? = null,
   val compatibility: String? = null,
   val allowedTools: String? = null,
-  val metadata: Map<String, String> = emptyMap(),
+  val metadata: Map<String, Any?> = emptyMap(),
 ) {
   init {
     require(name.isNotEmpty() && name.length <= 64) {
