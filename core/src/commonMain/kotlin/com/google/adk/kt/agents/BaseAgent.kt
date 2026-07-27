@@ -27,6 +27,7 @@ import com.google.adk.kt.ids.Uuid
 import com.google.adk.kt.telemetry.TelemetryAttributes
 import com.google.adk.kt.telemetry.trace
 import com.google.adk.kt.types.Content
+import com.google.adk.kt.types.Role
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.emitAll
@@ -39,7 +40,10 @@ import kotlinx.coroutines.flow.flow
  * creation, tracing, and callbacks. Subclasses must implement [runAsyncImpl] to define specific
  * behavior.
  *
- * @property name The name of the agent.
+ * @property name The name of the agent. Must be non-empty, must not be the reserved value `"user"`,
+ *   and must be groups of letters and digits joined by single dots, spaces, underscores, or
+ *   hyphens, optionally starting with an underscore. Construction throws [IllegalArgumentException]
+ *   if [name] does not meet these requirements.
  * @property description The description of the agent.
  * @property subAgents List of sub-agents.
  * @property beforeAgentCallbacks List of callbacks to run before the agent executes.
@@ -81,6 +85,13 @@ abstract class BaseAgent(
     }
 
   init {
+    require(name.isNotEmpty()) { "Agent name cannot be empty." }
+    require(VALID_AGENT_NAME_REGEX.matches(name)) {
+      "Invalid agent name '$name': must be groups of letters and digits joined by single " +
+        "dots, spaces, underscores, or hyphens, optionally starting with an underscore."
+    }
+    require(name != Role.USER) { "Agent name cannot be 'user'; reserved for end-user input." }
+
     // Establish parent-child relationship.
     for (agent in subAgents) {
       if (agent.parentAgent != null) {
@@ -264,6 +275,11 @@ abstract class BaseAgent(
 
   /** Abstract method for agent-specific asynchronous logic. */
   protected abstract fun runAsyncImpl(context: InvocationContext): Flow<Event>
+
+  private companion object {
+    /** Matches the agent name rule used by the Java implementation, for cross-language parity. */
+    val VALID_AGENT_NAME_REGEX = Regex("_?[a-zA-Z0-9]*([. _-][a-zA-Z0-9]+)*")
+  }
 }
 
 /**

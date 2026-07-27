@@ -20,15 +20,12 @@ import com.google.adk.kt.events.Event
 import com.google.adk.kt.testing.testInvocationContext
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 
-/**
- * Tests for the resumability state helpers on [BaseAgent] ([BaseAgent.loadAgentState] and
- * [BaseAgent.createStateEvent]). Mirrors Python ADK `tests/unittests/agents/test_base_agent.py`
- * (`test_load_agent_state_*`, `test_create_agent_state_event`).
- */
+/** Tests for [BaseAgent] name validation and its resumability state helpers. */
 class BaseAgentTest {
 
   @Test
@@ -68,6 +65,61 @@ class BaseAgentTest {
     assertEquals(agent.name, event.author)
     assertEquals("test_branch", event.branch)
     assertEquals(state.toStateValue(), event.actions.agentState)
+  }
+
+  @Test
+  fun construct_nameWithHyphen_isAccepted() {
+    val agent = StateTestAgent(name = "my-agent")
+
+    assertEquals("my-agent", agent.name)
+  }
+
+  @Test
+  fun construct_nameWithSpace_isAccepted() {
+    val agent = StateTestAgent(name = "my agent")
+
+    assertEquals("my agent", agent.name)
+  }
+
+  @Test
+  fun construct_nameWithDot_isAccepted() {
+    val agent = StateTestAgent(name = "my.agent")
+
+    assertEquals("my.agent", agent.name)
+  }
+
+  @Test
+  fun construct_nameStartingWithUnderscore_isAccepted() {
+    val agent = StateTestAgent(name = "_agent")
+
+    assertEquals("_agent", agent.name)
+  }
+
+  @Test
+  fun construct_emptyName_throwsIllegalArgumentException() {
+    assertFailsWith<IllegalArgumentException> { StateTestAgent(name = "") }
+  }
+
+  @Test
+  fun construct_nameWithTrailingHyphen_throwsIllegalArgumentException() {
+    assertFailsWith<IllegalArgumentException> { StateTestAgent(name = "agent-") }
+  }
+
+  @Test
+  fun construct_nameWithUnsupportedCharacter_throwsIllegalArgumentException() {
+    assertFailsWith<IllegalArgumentException> { StateTestAgent(name = "my@agent") }
+  }
+
+  @Test
+  fun construct_reservedNameUser_throwsIllegalArgumentException() {
+    assertFailsWith<IllegalArgumentException> { StateTestAgent(name = "user") }
+  }
+
+  @Test
+  fun construct_reservedNameIsCaseSensitive_acceptsCapitalizedUser() {
+    val agent = StateTestAgent(name = "User")
+
+    assertEquals("User", agent.name)
   }
 }
 
