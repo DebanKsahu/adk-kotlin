@@ -57,6 +57,9 @@ class FirebaseIntegrationTest {
      */
     private const val FIREBASE_APP_NAME = "adk-firebase-integration-test"
 
+    /** Model used when [EnvVars.FIREBASE_MODEL_NAME] is unset. */
+    private const val DEFAULT_MODEL_NAME = "gemini-flash-latest"
+
     private object EnvVars {
       const val FIREBASE_API_KEY = "FIREBASE_API_KEY"
       const val FIREBASE_APP_ID = "FIREBASE_APP_ID"
@@ -164,8 +167,10 @@ class FirebaseIntegrationTest {
     Assume.assumeFalse("firebase integration test disabled", itDisabled)
     initFirebaseApp()
     Assume.assumeTrue("unable to initialize firebase app", this::firebaseApp.isInitialized)
+    // A rolling `-latest` alias rather than a pinned version: a pinned model can be capacity
+    // constrained and answer 503 UNAVAILABLE for hours, which fails this test everywhere at once.
     val modelName =
-      System.getenv(EnvVars.FIREBASE_MODEL_NAME)?.ifEmpty { null } ?: "gemini-3.5-flash"
+      System.getenv(EnvVars.FIREBASE_MODEL_NAME)?.ifEmpty { null } ?: DEFAULT_MODEL_NAME
     firebaseModel = Firebase.create(modelName, FirebaseAI.getInstance(firebaseApp))
   }
 

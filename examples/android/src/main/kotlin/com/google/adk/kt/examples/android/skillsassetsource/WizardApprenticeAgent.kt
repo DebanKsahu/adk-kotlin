@@ -41,7 +41,7 @@ internal object WizardApprenticeAgent {
    * The Firebase AI model to use. Any model available to your Firebase project works; override it
    * if this one is not enabled for you.
    */
-  private const val MODEL_NAME: String = "gemini-3.5-flash"
+  private const val MODEL_NAME: String = "gemini-flash-latest"
 
   /**
    * Builds the agent against the given (already initialized) [firebaseApp], reading skills from

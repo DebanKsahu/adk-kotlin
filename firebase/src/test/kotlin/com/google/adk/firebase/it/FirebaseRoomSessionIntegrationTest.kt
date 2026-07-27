@@ -75,6 +75,9 @@ class FirebaseRoomSessionIntegrationTest {
     private const val APP_NAME = "firebase room session integration tests"
     private const val TEST_DB_NAME = "firebase_room_session_integration_test.db"
 
+    /** Model used when [EnvVars.FIREBASE_MODEL_NAME] is unset. */
+    private const val DEFAULT_MODEL_NAME = "gemini-flash-latest"
+
     private object EnvVars {
       const val FIREBASE_API_KEY = "FIREBASE_API_KEY"
       const val FIREBASE_APP_ID = "FIREBASE_APP_ID"
@@ -162,8 +165,10 @@ class FirebaseRoomSessionIntegrationTest {
     Assume.assumeFalse("firebase integration test disabled", itDisabled)
     initFirebaseApp()
     Assume.assumeTrue("unable to initialize firebase app", this::firebaseApp.isInitialized)
+    // A rolling `-latest` alias rather than a pinned version: a pinned model can be capacity
+    // constrained and answer 503 UNAVAILABLE for hours, which fails this test everywhere at once.
     val modelName =
-      System.getenv(EnvVars.FIREBASE_MODEL_NAME)?.ifEmpty { null } ?: "gemini-3.5-flash"
+      System.getenv(EnvVars.FIREBASE_MODEL_NAME)?.ifEmpty { null } ?: DEFAULT_MODEL_NAME
     firebaseModel = Firebase.create(modelName, FirebaseAI.getInstance(firebaseApp))
 
     context = ApplicationProvider.getApplicationContext()
