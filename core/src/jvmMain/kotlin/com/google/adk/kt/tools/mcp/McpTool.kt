@@ -89,10 +89,10 @@ internal constructor(
     return block()
   }
 
-  val annotations: McpSchema.ToolAnnotations?
+  internal val annotations: McpSchema.ToolAnnotations?
     get() = mcpSchemaTool.annotations()
 
-  val meta: Map<String, Any>?
+  internal val meta: Map<String, Any>?
     get() = mcpSchemaTool.meta()
 
   val mcpSessionClient: McpAsyncClient
