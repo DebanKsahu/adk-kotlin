@@ -25,6 +25,22 @@ plugins {
 // published AAR on the 2.1 stdlib and consumable by Kotlin 2.1 projects.
 kotlin { coreLibrariesVersion = rootProject.extra["kotlinCoreLibrariesVersion"] as String }
 
+// This module is newly extracted and still evolving, so its published artifact is
+// released as a beta pre-release while the rest of the project stays on the shared
+// release version. The numeric part keeps tracking the root project version (driven
+// by release-please); only the `-beta` qualifier is appended, kept before any
+// `-SNAPSHOT` suffix so Maven/Gradle order it as a pre-release. For example, a root
+// version of "0.6.1-SNAPSHOT" publishes as "0.6.1-beta-SNAPSHOT" and "0.6.1"
+// publishes as "0.6.1-beta".
+version =
+  rootProject.version.toString().let { rootVersion ->
+    if (rootVersion.endsWith("-SNAPSHOT")) {
+      "${rootVersion.removeSuffix("-SNAPSHOT")}-beta-SNAPSHOT"
+    } else {
+      "$rootVersion-beta"
+    }
+  }
+
 dependencies {
   implementation(project(":google-adk-kotlin-core"))
   implementation(libs.google.mlkit.genai.prompt)
