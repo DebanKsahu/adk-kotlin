@@ -56,7 +56,7 @@ import kotlin.time.Instant
  * executor, so this class does not need to wrap calls in `withContext`.
  */
 class RoomSessionService internal constructor(private val database: AdkSessionsDatabase) :
-  SessionService {
+  SessionService, AutoCloseable {
 
   private val dao: SessionsDao = database.sessionsDao()
   private val logger = LoggerFactory.getLogger(RoomSessionService::class)
@@ -179,7 +179,7 @@ class RoomSessionService internal constructor(private val database: AdkSessionsD
    * construct and destroy services repeatedly. In a normal app the database stays open for the
    * process lifetime — Android does not require explicit close.
    */
-  fun close() {
+  override fun close() {
     database.close()
   }
 

@@ -33,7 +33,7 @@ import com.google.adk.kt.types.Content
  * Plugins provide a structured way to intercept and modify agent, tool, and LLM behaviors at
  * critical execution points in a callback manner.
  */
-interface Plugin {
+interface Plugin : AutoCloseable {
   /** The unique name of the plugin. */
   val name: String
 
@@ -238,5 +238,5 @@ interface Plugin {
    * This method is used for cleanup tasks such as closing network connections or releasing
    * resources.
    */
-  suspend fun close() {}
+  override fun close() {}
 }

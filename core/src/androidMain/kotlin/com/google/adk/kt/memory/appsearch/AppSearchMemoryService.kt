@@ -59,7 +59,8 @@ private val METADATA_SERIALIZER = MapSerializer(String.serializer(), AnySerializ
  * This class holds all behavior and delegates storage to a [MemoryIndex] so it can be unit-tested
  * on the host JVM; [fromContext] wires it to the on-device [LocalStorageMemoryIndex].
  */
-class AppSearchMemoryService internal constructor(private val index: MemoryIndex) : MemoryService {
+class AppSearchMemoryService internal constructor(private val index: MemoryIndex) :
+  MemoryService, AutoCloseable {
 
   override suspend fun addSessionToMemory(session: Session) =
     addEventsToMemory(
@@ -105,7 +106,7 @@ class AppSearchMemoryService internal constructor(private val index: MemoryIndex
   }
 
   /** Releases the underlying index resources. Primarily useful for tests. */
-  fun close() = index.close()
+  override fun close() = index.close()
 
   private suspend fun putAll(records: List<MemoryRecord>) {
     if (records.isNotEmpty()) index.put(records)

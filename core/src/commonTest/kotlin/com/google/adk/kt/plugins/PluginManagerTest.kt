@@ -87,7 +87,7 @@ class PluginManagerTest {
       object : Plugin {
         override val name = "closeable"
 
-        override suspend fun close() {
+        override fun close() {
           closed += 1
         }
       }
@@ -109,7 +109,7 @@ class PluginManagerTest {
       object : Plugin {
         override val name = "shared"
 
-        override suspend fun close() {
+        override fun close() {
           closed += 1
         }
       }

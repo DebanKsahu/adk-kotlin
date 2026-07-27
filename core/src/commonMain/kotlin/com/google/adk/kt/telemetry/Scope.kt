@@ -17,7 +17,7 @@
 package com.google.adk.kt.telemetry
 
 /** Represents a scope for context propagation. */
-interface Scope {
+interface Scope : AutoCloseable {
   /** Closes the scope, detaching it. */
-  fun close()
+  override fun close()
 }

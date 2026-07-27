@@ -43,7 +43,7 @@ import com.google.adk.kt.logging.LoggerFactory
 class PluginManager(
   val plugins: List<Plugin> = emptyList(),
   val skipClosingPlugins: Boolean = false,
-) {
+) : AutoCloseable {
 
   init {
     val duplicates = plugins.groupingBy { it.name }.eachCount().filterValues { it > 1 }.keys
@@ -96,7 +96,7 @@ class PluginManager(
     return plugins.find { it.name == pluginName }
   }
 
-  suspend fun close() {
+  override fun close() {
     if (skipClosingPlugins) {
       logger.trace { "Skipping close() for ${plugins.size} plugin(s); not owned by this manager." }
       return

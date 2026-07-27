@@ -54,7 +54,7 @@ internal data class MemoryRecord(
  * be unit-tested on the host JVM against a fake. The production implementation,
  * [LocalStorageMemoryIndex], is a thin adapter over AndroidX AppSearch LocalStorage.
  */
-internal interface MemoryIndex {
+internal interface MemoryIndex : AutoCloseable {
 
   /** Upserts [records] by `(namespace, id)`. */
   suspend fun put(records: List<MemoryRecord>)
@@ -66,5 +66,5 @@ internal interface MemoryIndex {
   suspend fun search(namespace: String, query: String): List<MemoryRecord>
 
   /** Releases any underlying resources. */
-  fun close()
+  override fun close()
 }
