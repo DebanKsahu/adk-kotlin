@@ -17,9 +17,8 @@
 package com.google.adk.kt.tools.mcp.it
 
 import com.google.adk.kt.testing.testToolContext
-import com.google.adk.kt.types.Type
+import com.google.adk.kt.tools.mcp.McpToolset
 import com.google.common.truth.Truth.assertThat
-import io.modelcontextprotocol.spec.McpSchema
 import java.nio.file.Files
 import java.time.Duration
 import java.util.concurrent.TimeUnit
@@ -32,109 +31,75 @@ import kotlinx.coroutines.withTimeout
 /**
  * End-to-end integration test for `McpToolset` over the **stdio** transport.
  *
- * Launches the real [FakeMcpServer] as a child JVM process and talks to it over actual stdin/stdout
- * pipes, complementing the mock-based `McpToolsetTest` by covering the seams a mocked session can't
- * reach: the subprocess + stdio transport, JSON-RPC (de)serialization, tool-call round-trips, and
- * persistent server state.
+ * The transport-agnostic behavior lives in [McpToolsetContract]; this suite supplies a stdio
+ * [McpToolsetHarness] (the real [FakeMcpServer] launched as a child JVM, talking over actual
+ * stdin/stdout pipes) and delegates one `@Test` to each contract check. On top of that it adds the
+ * tests that only make sense for a real subprocess: recovery after the server process is killed,
+ * behavior against an unresponsive server, and orphan-free teardown -- none of which the in-process
+ * HTTP suite can exercise.
  *
  * Shared subprocess/PID/toolset helpers live in [McpIntegrationTestSupport].
  */
 class McpToolsetIntegrationTest {
 
+  private val contract =
+    McpToolsetContract(
+      object : McpToolsetHarness {
+        override suspend fun withToolset(
+          useMcpResources: Boolean,
+          block: suspend (McpToolset) -> Unit,
+        ) {
+          newToolset(useMcpResources = useMcpResources).use { block(it) }
+        }
+      }
+    )
+
   /** Skips the whole suite when [DISABLE_IT_ENV] is set to a truthy value. */
   @BeforeTest fun skipIfDisabled() = assumeMcpItEnabled()
 
+  // --- Shared transport contract (see McpToolsetContract) ---
+
   @Test
   fun getTools_listsToolsAdvertisedByTheServer(): Unit = runBlocking {
-    newToolset().use { toolset ->
-      val toolNames = toolset.getTools().map { it.name }
-      assertThat(toolNames)
-        .containsExactly(
-          FakeMcpServer.TOOL_ECHO,
-          FakeMcpServer.TOOL_ADD,
-          FakeMcpServer.TOOL_COUNTER,
-          FakeMcpServer.TOOL_WHOAMI,
-          FakeMcpServer.TOOL_SLOW,
-          FakeMcpServer.TOOL_FAIL,
-          FakeMcpServer.TOOL_HANG,
-        )
-    }
+    contract.getTools_listsToolsAdvertisedByTheServer()
   }
 
   @Test
   fun getTools_withUseMcpResources_appendsResourceTools(): Unit = runBlocking {
-    newToolset(useMcpResources = true).use { toolset ->
-      val toolNames = toolset.getTools().map { it.name }
-      // The three resource tools are appended only because the live server advertises the
-      // resources capability during the handshake (gated in McpToolset.loadTools); the five server
-      // tools remain, so we assert the full, exact set. (The default-config test above proves they
-      // are absent when useMcpResources is false.)
-      assertThat(toolNames)
-        .containsExactly(
-          FakeMcpServer.TOOL_ECHO,
-          FakeMcpServer.TOOL_ADD,
-          FakeMcpServer.TOOL_COUNTER,
-          FakeMcpServer.TOOL_WHOAMI,
-          FakeMcpServer.TOOL_SLOW,
-          FakeMcpServer.TOOL_FAIL,
-          FakeMcpServer.TOOL_HANG,
-          "list_mcp_resources",
-          "load_mcp_resource",
-          "list_mcp_resource_templates",
-        )
-    }
+    contract.getTools_withUseMcpResources_appendsResourceTools()
   }
 
   @Test
   fun readResource_returnsServerContentEmbeddingTheInjectedToken(): Unit = runBlocking {
-    newToolset().use { toolset ->
-      val contents = toolset.readResource(FakeMcpServer.RESOURCE_GREETING_URI) as List<*>
-      val text = (contents.single() as McpSchema.TextResourceContents).text()
-      // Proves the env-injection channel and a real resources/read round-trip.
-      assertThat(text).contains(INJECTED_TOKEN)
-    }
+    contract.readResource_returnsServerContentEmbeddingTheInjectedToken()
   }
 
   @Test
   fun run_echoTool_returnsTheArgumentVerbatim(): Unit = runBlocking {
-    val message = "round-trip payload"
-    newToolset().use { toolset ->
-      val echo = toolset.getTools().single { it.name == FakeMcpServer.TOOL_ECHO }
-      val result = echo.run(testToolContext(), mapOf("message" to message))
-      assertThat(textOf(result)).isEqualTo(message)
-    }
+    contract.run_echoTool_returnsTheArgumentVerbatim()
   }
 
   @Test
   fun run_addTool_returnsServerComputedSum(): Unit = runBlocking {
-    newToolset().use { toolset ->
-      val add = toolset.getTools().single { it.name == FakeMcpServer.TOOL_ADD }
-      val result = add.run(testToolContext(), mapOf("a" to 2, "b" to 3))
-      // Numeric marshalling, which the string echo test doesn't cover.
-      assertThat(textOf(result)).isEqualTo("5")
-    }
+    contract.run_addTool_returnsServerComputedSum()
   }
 
   @Test
   fun run_counterTool_incrementsServerStateAcrossCalls(): Unit = runBlocking {
-    newToolset().use { toolset ->
-      val counter = toolset.getTools().single { it.name == FakeMcpServer.TOOL_COUNTER }
-      // Same cached session across calls, so the count persists (1 then 2).
-      assertThat(textOf(counter.run(testToolContext(), emptyMap()))).isEqualTo("1")
-      assertThat(textOf(counter.run(testToolContext(), emptyMap()))).isEqualTo("2")
-    }
+    contract.run_counterTool_incrementsServerStateAcrossCalls()
   }
 
   @Test
   fun run_failingTool_returnsToolExecutionErrorVerbatim(): Unit = runBlocking {
-    newToolset().use { toolset ->
-      val fail = toolset.getTools().single { it.name == FakeMcpServer.TOOL_FAIL }
-      val result = fail.run(testToolContext(), emptyMap())
-      // In-band tool error: returned verbatim (isError=true), not thrown, so no retry path.
-      assertThat(isErrorOf(result)).isTrue()
-      assertThat(textOf(result)).isEqualTo(FakeMcpServer.FAIL_MESSAGE)
-    }
+    contract.run_failingTool_returnsToolExecutionErrorVerbatim()
   }
+
+  @Test
+  fun declaration_addTool_convertsServerSchemaToTypedParameters(): Unit = runBlocking {
+    contract.declaration_addTool_convertsServerSchemaToTypedParameters()
+  }
+
+  // --- stdio-only: process lifecycle ---
 
   @Test
   fun run_afterServerProcessKilled_respawnsFreshProcessAndRecovers(): Unit = runBlocking {
@@ -241,21 +206,6 @@ class McpToolsetIntegrationTest {
       toolset.close()
       liveRecordedProcesses(pidDir).forEach { it.destroyForcibly() }
       pidDir.toFile().deleteRecursively()
-    }
-  }
-
-  @Test
-  fun declaration_addTool_convertsServerSchemaToTypedParameters(): Unit = runBlocking {
-    newToolset().use { toolset ->
-      val add = toolset.getTools().single { it.name == FakeMcpServer.TOOL_ADD }
-      // declaration() runs McpSchemaConverter over the JSON schema the server returned on the wire
-      // (via tools/list), so this checks our conversion against a real schema, not a hand-built
-      // one.
-      val params = requireNotNull(add.declaration()?.parameters)
-      assertThat(params.type).isEqualTo(Type.OBJECT)
-      assertThat(params.required).containsExactly("a", "b")
-      assertThat(params.properties?.get("a")?.type).isEqualTo(Type.INTEGER)
-      assertThat(params.properties?.get("b")?.type).isEqualTo(Type.INTEGER)
     }
   }
 
