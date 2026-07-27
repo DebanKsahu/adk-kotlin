@@ -17,6 +17,7 @@
 package com.google.adk.kt.runners
 
 import com.google.adk.kt.agents.BaseAgent
+import com.google.adk.kt.agents.ContextCacheConfig
 import com.google.adk.kt.agents.InvocationContext
 import com.google.adk.kt.agents.LlmAgent
 import com.google.adk.kt.agents.ResumabilityConfig
@@ -58,7 +59,6 @@ import kotlinx.coroutines.runBlocking
 /** An abstract base class for [Runner] implementations that provides common orchestration logic. */
 abstract class AbstractRunner : Runner {
 
-  val app: App?
   final override val appName: String
   final override val agent: BaseAgent
   final override val sessionService: SessionService
@@ -66,6 +66,10 @@ abstract class AbstractRunner : Runner {
   final override val memoryService: MemoryService?
   final override val pluginManager: PluginManager
   final override val resumabilityConfig: ResumabilityConfig
+
+  /** Effective compaction config, with a default summarizer injected when one was not supplied. */
+  private val eventsCompactionConfig: EventsCompactionConfig?
+  private val contextCacheConfig: ContextCacheConfig?
 
   /** Creates a runner from explicit fields, not using an [App]. */
   constructor(
@@ -84,7 +88,8 @@ abstract class AbstractRunner : Runner {
     this.memoryService = memoryService
     this.pluginManager = pluginManager
     this.resumabilityConfig = resumabilityConfig
-    this.app = null
+    this.eventsCompactionConfig = null
+    this.contextCacheConfig = null
   }
 
   /**
@@ -95,9 +100,8 @@ abstract class AbstractRunner : Runner {
    * source of truth. The field-based primary constructor still accepts a [pluginManager] and
    * [resumabilityConfig] for backward compatibility.
    *
-   * The compaction config is resolved at construction (failing fast if a default summarizer is
-   * required but the root agent is not an [LlmAgent]) and stored back on the [app], so
-   * [App.eventsCompactionConfig] returns the effective config.
+   * [App.eventsCompactionConfig] is resolved at construction, failing fast if a default summarizer
+   * is required but the root agent is not an [LlmAgent].
    */
   constructor(
     app: App,
@@ -113,11 +117,9 @@ abstract class AbstractRunner : Runner {
     this.memoryService = memoryService
     this.pluginManager = PluginManager(app.plugins, skipClosingPlugins = skipClosingPlugins)
     this.resumabilityConfig = app.resumabilityConfig ?: ResumabilityConfig()
-    this.app =
-      app.copy(
-        eventsCompactionConfig =
-          resolveEventsCompactionConfig(app.rootAgent, app.eventsCompactionConfig)
-      )
+    this.eventsCompactionConfig =
+      resolveEventsCompactionConfig(app.rootAgent, app.eventsCompactionConfig)
+    this.contextCacheConfig = app.contextCacheConfig
   }
 
   /**
@@ -545,8 +547,8 @@ abstract class AbstractRunner : Runner {
         userContent = newMessage,
         pluginManager = pluginManager,
         resumabilityConfig = resumabilityConfig,
-        eventsCompactionConfig = app?.eventsCompactionConfig,
-        contextCacheConfig = app?.contextCacheConfig,
+        eventsCompactionConfig = eventsCompactionConfig,
+        contextCacheConfig = contextCacheConfig,
       )
       .let {
         // Run callbacks and append user message to session
@@ -602,8 +604,8 @@ abstract class AbstractRunner : Runner {
         userContent = userMessage,
         pluginManager = pluginManager,
         resumabilityConfig = resumabilityConfig,
-        eventsCompactionConfig = app?.eventsCompactionConfig,
-        contextCacheConfig = app?.contextCacheConfig,
+        eventsCompactionConfig = eventsCompactionConfig,
+        contextCacheConfig = contextCacheConfig,
       )
 
     val currentContext =
@@ -752,7 +754,7 @@ abstract class AbstractRunner : Runner {
    * configured invocation interval is reached.
    */
   private suspend fun runPostInvocationCompaction(session: Session) {
-    val config = app?.eventsCompactionConfig ?: return
+    val config = eventsCompactionConfig ?: return
     if (!config.hasSlidingWindowConfig()) return
     SlidingWindowEventCompactor(config).compact(session, sessionService)
   }

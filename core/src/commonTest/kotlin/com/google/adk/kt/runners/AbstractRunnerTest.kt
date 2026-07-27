@@ -811,9 +811,6 @@ class AbstractRunnerTest {
           )
       )
 
-    // The runner exposes its App (read-only); the effective compaction config is read from it.
-    assertEquals(summarizer, runner.app?.eventsCompactionConfig?.summarizer)
-
     // First invocation: only one completed invocation, below the interval.
     runner.runAsync(userId = "user", sessionId = "session", newMessage = userMessage("hi")).toList()
     assertTrue(summarizer.calls.isEmpty())
