@@ -84,8 +84,22 @@ class AppTest {
   }
 
   @Test
-  fun construct_nameWithHyphen_throwsIllegalArgumentException() {
-    assertFailsWith<IllegalArgumentException> { App(appName = "my-app", rootAgent = DummyAgent()) }
+  fun construct_nameStartingWithUnderscore_throwsIllegalArgumentException() {
+    assertFailsWith<IllegalArgumentException> { App(appName = "_app", rootAgent = DummyAgent()) }
+  }
+
+  @Test
+  fun construct_nameWithHyphen_isAccepted() {
+    val app = App(appName = "my-app", rootAgent = DummyAgent())
+
+    assertEquals("my-app", app.appName)
+  }
+
+  @Test
+  fun construct_nameWithLetterFollowedByDigit_isAccepted() {
+    val app = App(appName = "a1", rootAgent = DummyAgent())
+
+    assertEquals("a1", app.appName)
   }
 
   @Test

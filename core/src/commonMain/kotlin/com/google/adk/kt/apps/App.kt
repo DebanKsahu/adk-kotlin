@@ -31,8 +31,8 @@ import com.google.adk.kt.summarizer.EventsCompactionConfig
  * application-wide configuration, such as [plugins] and [resumabilityConfig], that the runner
  * applies to every session it runs.
  *
- * [appName] must be a valid identifier (letters, digits, and underscores only, not starting with a
- * digit) and must not be the reserved value `"user"`, which is reserved for end-user input.
+ * [appName] must start with a letter and may contain only letters, digits, underscores, and
+ * hyphens, and must not be the reserved value `"user"`, which is reserved for end-user input.
  * Construction throws [IllegalArgumentException] if [appName] does not meet these requirements.
  *
  * @property appName The application name.
@@ -55,9 +55,9 @@ data class App(
   val contextCacheConfig: ContextCacheConfig? = null,
 ) {
   init {
-    require(IDENTIFIER_REGEX.matches(appName)) {
-      "Invalid app name '$appName': must be a valid identifier consisting of letters, digits, " +
-        "and underscores."
+    require(VALID_APP_NAME_REGEX.matches(appName)) {
+      "Invalid app name '$appName': must start with a letter and can only consist of letters, " +
+        "digits, underscores, and hyphens."
     }
     require(appName != RESERVED_NAME) {
       "App name cannot be '$RESERVED_NAME'; reserved for end-user input."
@@ -65,7 +65,7 @@ data class App(
   }
 
   private companion object {
-    val IDENTIFIER_REGEX = Regex("[a-zA-Z_][a-zA-Z0-9_]*")
+    val VALID_APP_NAME_REGEX = Regex("[a-zA-Z][a-zA-Z0-9_-]*")
     const val RESERVED_NAME = "user"
   }
 }
