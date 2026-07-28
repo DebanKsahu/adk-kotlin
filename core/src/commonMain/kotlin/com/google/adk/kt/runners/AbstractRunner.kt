@@ -45,6 +45,7 @@ import com.google.adk.kt.summarizer.LlmEventSummarizer
 import com.google.adk.kt.summarizer.SlidingWindowEventCompactor
 import com.google.adk.kt.telemetry.currentTelemetryContext
 import com.google.adk.kt.telemetry.trace
+import com.google.adk.kt.tools.BaseTool
 import com.google.adk.kt.types.Blob
 import com.google.adk.kt.types.Content
 import com.google.adk.kt.types.Part
@@ -71,7 +72,13 @@ abstract class AbstractRunner : Runner {
   private val eventsCompactionConfig: EventsCompactionConfig?
   private val contextCacheConfig: ContextCacheConfig?
 
-  /** Creates a runner from explicit fields, not using an [App]. */
+  /**
+   * Creates a runner from explicit fields, not using an [App].
+   *
+   * The supplied [pluginManager] is closed by [close]. Two runners sharing one manager therefore
+   * means closing either disables the other's plugins; construct it with
+   * [PluginManager.skipClosingPlugins] set to prevent closing the plugins by this runner.
+   */
   constructor(
     appName: String,
     agent: BaseAgent,
@@ -195,6 +202,81 @@ abstract class AbstractRunner : Runner {
         )
         .toList()
         .iterator()
+    }
+  }
+
+  /**
+   * Closes this runner, releasing the resources it owns.
+   *
+   * Closes, in order, every [Toolset] and [BaseTool] reachable from [agent]'s subtree (walking
+   * [BaseAgent.subAgents]), then the [pluginManager]. Mirrors ADK Python's `Runner.close`, which
+   * likewise collects toolsets recursively across the agent tree before closing plugins.
+   *
+   * Each resource is closed exactly once even when shared by several agents.
+   *
+   * A failure closing one resource never prevents the rest from being closed. Every failure is
+   * collected; if there were any, the first is rethrown with the others attached to it via
+   * [Throwable.addSuppressed].
+   *
+   * Calling this more than once is safe as long as the tools, toolsets, and plugins involved are
+   * themselves idempotent, which [AutoCloseable] strongly recommends of its implementers.
+   *
+   * Services that were supplied by the caller ([sessionService], [artifactService],
+   * [memoryService]) are deliberately *not* closed -- the runner does not own them, and closing a
+   * shared client would break other users of it.
+   */
+  override fun close() {
+    val exceptions = mutableListOf<Exception>()
+
+    // Deduplicates so a tool shared by several agents is closed once.
+    val toolsToClose = mutableSetOf<AutoCloseable>()
+    collectToolsToClose(agent, toolsToClose)
+
+    for (tool in toolsToClose) {
+      closeQuietly(tool, if (tool is BaseTool) "tool '${tool.name}'" else "toolset", exceptions)
+    }
+    closeQuietly(pluginManager, "plugin manager", exceptions)
+
+    if (exceptions.isEmpty()) return
+    val failure = exceptions.first()
+    for (other in exceptions.drop(1)) {
+      failure.addSuppressed(other)
+    }
+    throw failure
+  }
+
+  /**
+   * Closes [closeable], recording any failure in [exceptions] so remaining resources still close.
+   */
+  private fun closeQuietly(
+    closeable: AutoCloseable,
+    description: String,
+    exceptions: MutableList<Exception>,
+  ) {
+    try {
+      closeable.close()
+    } catch (e: Exception) {
+      logger.error(e) { "Error closing $description" }
+      exceptions.add(e)
+    }
+  }
+
+  /**
+   * Recursively collects every [Toolset] and [BaseTool] reachable from [current] and its
+   * [BaseAgent.subAgents] into [into]. Only [LlmAgent] carries tools, so other agent types
+   * contribute solely their sub-agents.
+   */
+  private fun collectToolsToClose(current: BaseAgent, into: MutableSet<AutoCloseable>) {
+    if (current is LlmAgent) {
+      for (toolset in current.toolsets) {
+        into.add(toolset)
+      }
+      for (tool in current.tools) {
+        into.add(tool)
+      }
+    }
+    for (sub in current.subAgents) {
+      collectToolsToClose(sub, into)
     }
   }
 

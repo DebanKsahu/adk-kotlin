@@ -16,8 +16,10 @@
 
 package com.google.adk.kt.runners
 
+import com.google.adk.kt.agents.BaseAgent
 import com.google.adk.kt.agents.Instruction
 import com.google.adk.kt.agents.LlmAgent
+import com.google.adk.kt.agents.ReadonlyContext
 import com.google.adk.kt.agents.ResumabilityConfig
 import com.google.adk.kt.agents.RunConfig
 import com.google.adk.kt.agents.TypedData
@@ -40,13 +42,18 @@ import com.google.adk.kt.testing.compactionEvent
 import com.google.adk.kt.testing.modelMessage
 import com.google.adk.kt.testing.simplifyEvents
 import com.google.adk.kt.testing.userMessage
+import com.google.adk.kt.tools.BaseTool
+import com.google.adk.kt.tools.ToolContext
+import com.google.adk.kt.tools.Toolset
 import com.google.adk.kt.types.Content
 import com.google.adk.kt.types.FunctionCall
+import com.google.adk.kt.types.FunctionDeclaration
 import com.google.adk.kt.types.FunctionResponse
 import com.google.adk.kt.types.Part
 import com.google.adk.kt.types.Role
 import com.google.adk.kt.types.UsageMetadata
 import com.google.common.truth.Truth.assertThat
+import kotlin.test.assertFailsWith
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
@@ -92,6 +99,130 @@ class InMemoryRunnerTest {
     val runner = InMemoryRunner(app = app)
 
     assertThat(runner.pluginManager.getPlugin("app-plugin")).isSameInstanceAs(plugin)
+  }
+
+  @Test
+  fun close_closesPluginsOwnedByRunner() {
+    var closed = false
+    val plugin =
+      object : Plugin {
+        override val name = "closeable-plugin"
+
+        override fun close() {
+          closed = true
+        }
+      }
+    val app = App(appName = "dummy_app", rootAgent = dummyAgent, plugins = listOf(plugin))
+    val runner = InMemoryRunner(app = app)
+
+    runner.close()
+
+    assertThat(closed).isTrue()
+  }
+
+  @Test
+  fun close_closesToolsAndToolsetsAcrossAgentTree() {
+    val rootTool = RecordingTool("root-tool")
+    val rootToolset = RecordingToolset()
+    val childTool = RecordingTool("child-tool")
+    val childToolset = RecordingToolset()
+    // The grandchild sits two levels down, so closing must recurse past the first level.
+    val grandchildTool = RecordingTool("grandchild-tool")
+    val grandchild = llmAgent(name = "grandchild", tools = listOf(grandchildTool))
+    val child =
+      llmAgent(
+        name = "child",
+        tools = listOf(childTool),
+        toolsets = listOf(childToolset),
+        subAgents = listOf(grandchild),
+      )
+    val root =
+      llmAgent(
+        name = "root",
+        tools = listOf(rootTool),
+        toolsets = listOf(rootToolset),
+        subAgents = listOf(child),
+      )
+    val runner = InMemoryRunner(agent = root)
+
+    runner.close()
+
+    assertThat(rootTool.closeCount).isEqualTo(1)
+    assertThat(rootToolset.closeCount).isEqualTo(1)
+    assertThat(childTool.closeCount).isEqualTo(1)
+    assertThat(childToolset.closeCount).isEqualTo(1)
+    assertThat(grandchildTool.closeCount).isEqualTo(1)
+  }
+
+  @Test
+  fun close_withToolSharedBetweenAgents_closesItOnce() {
+    val shared = RecordingTool("shared-tool")
+    val child = llmAgent(name = "child", tools = listOf(shared))
+    val root = llmAgent(name = "root", tools = listOf(shared), subAgents = listOf(child))
+    val runner = InMemoryRunner(agent = root)
+
+    runner.close()
+
+    assertThat(shared.closeCount).isEqualTo(1)
+  }
+
+  @Test
+  fun close_whenToolThrows_stillClosesRemainingResourcesAndRethrows() {
+    val failing = ThrowingTool("failing-tool", IllegalStateException("boom"))
+    val healthy = RecordingTool("healthy-tool")
+    val toolset = RecordingToolset()
+    var pluginClosed = false
+    val plugin =
+      object : Plugin {
+        override val name = "plugin"
+
+        override fun close() {
+          pluginClosed = true
+        }
+      }
+    val root = llmAgent(name = "root", tools = listOf(failing, healthy), toolsets = listOf(toolset))
+    val runner =
+      InMemoryRunner(app = App(appName = "app", rootAgent = root, plugins = listOf(plugin)))
+
+    val thrown = assertFailsWith<IllegalStateException> { runner.close() }
+
+    assertThat(thrown.message).isEqualTo("boom")
+    // A failure closing one resource must not prevent the others from being released.
+    assertThat(healthy.closeCount).isEqualTo(1)
+    assertThat(toolset.closeCount).isEqualTo(1)
+    assertThat(pluginClosed).isTrue()
+  }
+
+  @Test
+  fun close_whenSeveralResourcesThrow_rethrowsFirstWithRestSuppressed() {
+    val first = IllegalStateException("first")
+    val second = IllegalArgumentException("second")
+    val root =
+      llmAgent(
+        name = "root",
+        tools = listOf(ThrowingTool("tool-a", first), ThrowingTool("tool-b", second)),
+      )
+    val runner = InMemoryRunner(agent = root)
+
+    val thrown = assertFailsWith<IllegalStateException> { runner.close() }
+
+    // The first failure is reported as-is (type and message preserved), rather than being
+    // replaced by a synthetic wrapper, and later failures ride along as suppressed.
+    assertThat(thrown).isSameInstanceAs(first)
+    assertThat(thrown.suppressed.toList()).containsExactly(second)
+  }
+
+  @Test
+  fun close_withNonLlmAgentInTree_closesToolsOfNestedLlmAgents() {
+    val nestedTool = RecordingTool("nested-tool")
+    val nested = llmAgent(name = "nested", tools = listOf(nestedTool))
+    // A non-LlmAgent carries no tools itself, but must still be traversed.
+    val root = DummyAgent(name = "plain-root", subAgents = listOf(nested))
+    val runner = InMemoryRunner(agent = root)
+
+    runner.close()
+
+    assertThat(nestedTool.closeCount).isEqualTo(1)
   }
 
   @Test
@@ -588,6 +719,59 @@ class InMemoryRunnerTest {
 
     assertThat(allSessionEvents.size).isEqualTo(2)
     assertThat(allSessionEvents.last().content?.parts?.get(0)?.text).isEqualTo("New message")
+  }
+}
+
+/** Builds an [LlmAgent] with a stub model, so tests can focus on the tool/toolset wiring. */
+private fun llmAgent(
+  name: String,
+  tools: List<BaseTool> = emptyList(),
+  toolsets: List<Toolset> = emptyList(),
+  subAgents: List<BaseAgent> = emptyList(),
+) =
+  LlmAgent(
+    name = name,
+    model = DummyModel(name = "$name-model") { flowOf(LlmResponse()) },
+    tools = tools,
+    toolsets = toolsets,
+    subAgents = subAgents,
+  )
+
+/** A [BaseTool] that counts how many times it was closed. */
+private class RecordingTool(name: String) : BaseTool(name = name, description = "") {
+  var closeCount: Int = 0
+    private set
+
+  override fun declaration(): FunctionDeclaration? = null
+
+  override suspend fun run(context: ToolContext, args: Map<String, Any>): Any =
+    emptyMap<String, Any>()
+
+  override fun close() {
+    closeCount++
+  }
+}
+
+/** A [BaseTool] whose [close] always throws [failure]. */
+private class ThrowingTool(name: String, private val failure: RuntimeException) :
+  BaseTool(name = name, description = "") {
+  override fun declaration(): FunctionDeclaration? = null
+
+  override suspend fun run(context: ToolContext, args: Map<String, Any>): Any =
+    emptyMap<String, Any>()
+
+  override fun close(): Unit = throw failure
+}
+
+/** A [Toolset] that counts how many times it was closed. */
+private class RecordingToolset : Toolset {
+  var closeCount: Int = 0
+    private set
+
+  override suspend fun getTools(readonlyContext: ReadonlyContext?): List<BaseTool> = emptyList()
+
+  override fun close() {
+    closeCount++
   }
 }
 

@@ -28,7 +28,7 @@ import com.google.adk.kt.types.Content
 import kotlinx.coroutines.flow.Flow
 
 /** The Runner interface defines the contract for running agents. */
-interface Runner {
+interface Runner : AutoCloseable {
   val appName: String
   val agent: BaseAgent
   val sessionService: SessionService
@@ -93,4 +93,18 @@ interface Runner {
   suspend fun rewindAsync(userId: String, sessionId: String, rewindBeforeInvocationId: String) {
     throw NotImplementedError("rewindAsync for ${this::class.simpleName} is not implemented")
   }
+
+  /**
+   * Releases resources held by this runner, such as its plugins and the toolsets its agents own.
+   *
+   * Being [AutoCloseable] lets callers manage a runner's lifecycle idiomatically, e.g. with
+   * Kotlin's `use {}`. See [AbstractRunner.close] for the standard behavior.
+   *
+   * **Implementations must override this.** The no-op body exists only so that adding
+   * [AutoCloseable] to this interface did not break existing implementations; it will be removed,
+   * at which point `close()` becomes abstract and every implementation must supply its own. Relying
+   * on the default silently skips resource cleanup, so implementations that genuinely hold nothing
+   * closeable should still override it with an explicit no-op.
+   */
+  override fun close() {}
 }
