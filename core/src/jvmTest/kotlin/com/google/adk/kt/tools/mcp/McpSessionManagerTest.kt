@@ -21,9 +21,11 @@ import io.modelcontextprotocol.spec.McpClientTransport
 import java.time.Duration
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNotSame
 import kotlin.test.assertSame
+import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 import org.mockito.kotlin.any
 import org.mockito.kotlin.mock
@@ -266,6 +268,24 @@ class McpSessionManagerTest {
     assertNotNull(client)
     assertEquals(Duration.ofMinutes(5), client.initializationTimeout)
     assertEquals(Duration.ofSeconds(5), client.requestTimeout)
+  }
+
+  @Test
+  fun hasProgressConsumers_withRegisteredConsumer_returnsTrue() {
+    val params = McpConnectionParameters.Sse(url = "http://localhost:1234")
+
+    val sessionManager = McpSessionManager(params, progressConsumers = listOf({ _ -> }))
+
+    assertTrue(sessionManager.hasProgressConsumers)
+  }
+
+  @Test
+  fun hasProgressConsumers_withNoRegisteredConsumers_returnsFalse() {
+    val params = McpConnectionParameters.Sse(url = "http://localhost:1234")
+
+    val sessionManager = McpSessionManager(params)
+
+    assertFalse(sessionManager.hasProgressConsumers)
   }
 
   @Test

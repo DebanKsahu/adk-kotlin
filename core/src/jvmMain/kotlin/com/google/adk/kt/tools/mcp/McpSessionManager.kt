@@ -47,6 +47,9 @@ internal class McpSessionManager(
   private val sessionOpener: ((Map<String, String>) -> McpAsyncClient)? = null,
 ) : SessionManager {
 
+  override val hasProgressConsumers: Boolean
+    get() = progressConsumers.isNotEmpty()
+
   /**
    * Guards [sessions] across the suspending create+initialize critical section.
    *
@@ -104,7 +107,8 @@ internal class McpSessionManager(
 
   // Not suspend: it's driven by the non-suspend AutoCloseable.close(). runBlocking bridges the
   // coroutine Mutex that getSession holds across a suspending initialize(). closeAll's own critical
-  // section is brief: snapshot + clear so an in-flight getSession can't re-pool afterwards, then the
+  // section is brief: snapshot + clear so an in-flight getSession can't re-pool afterwards, then
+  // the
   // client.close() calls run outside it (fire-and-forget).
   //
   // Warning: acquiring the lock can still block this thread if a getSession is mid-initialize (it

@@ -101,10 +101,8 @@ fun fakeServerParameters(
 /**
  * Builds an [McpToolset] wired to a freshly-spawned [FakeMcpServer] subprocess.
  *
- * TODO(b/529753915): `progressConsumers` is plumbed but intentionally unexercised. ADK's
- *   McpTool.run never sets a progressToken on outgoing tool calls, so a spec-conformant server
- *   emits no progress and the consumer never fires. Add a conformant progress test once that gap is
- *   closed.
+ * Passing [progressConsumers] also makes `McpTool.run` attach a progress token to its tool calls,
+ * which is what makes [FakeMcpServer]'s spec-conformant `slow` tool emit progress at all.
  */
 fun newToolset(
   token: String = INJECTED_TOKEN,

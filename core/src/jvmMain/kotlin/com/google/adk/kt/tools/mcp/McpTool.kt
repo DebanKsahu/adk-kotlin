@@ -16,6 +16,7 @@
 
 package com.google.adk.kt.tools.mcp
 
+import com.google.adk.kt.ids.Uuid
 import com.google.adk.kt.logging.LoggerFactory
 import com.google.adk.kt.tools.BaseTool
 import com.google.adk.kt.tools.ToolContext
@@ -59,12 +60,37 @@ internal constructor(
   }
 
   override suspend fun run(context: ToolContext, args: Map<String, Any>): Any {
-    val request = McpSchema.CallToolRequest(name, args)
+    val request = McpSchema.CallToolRequest(name, args, requestMeta(context))
     val callResult = retrySessionCall { callTool(request).awaitSingleOrNull() }
 
     return callResult?.toJsonNativeMap()
       ?: mapOf("error" to "MCP framework error: CallToolResult was null")
   }
+
+  /**
+   * Builds the request's `_meta`, or `null` to leave `_meta` off the request entirely.
+   *
+   * Progress reporting is opt-in by the client: a server may only emit progress notifications that
+   * reference a progress token supplied on the originating request, so without one a
+   * spec-conformant server stays silent and the progress consumers registered on the session are
+   * never called. The token is attached only when a consumer is actually listening, so servers are
+   * not asked to produce progress that nothing reads.
+   *
+   * The token is the [ToolContext.functionCallId] of the model function call being served, which
+   * lets a consumer attribute a notification back to that call; a call made outside an agent loop
+   * has no id and gets a fresh one instead. Python ADK uses the JSON-RPC request id, which the Java
+   * MCP SDK does not expose to callers.
+   *
+   * Built as one map rather than through `CallToolRequest.Builder.progressToken`, which mutates the
+   * builder's `meta` in place and therefore either drops entries or throws when combined with
+   * `Builder.meta`, depending on call order. Any further `_meta` entries belong in this map.
+   */
+  private fun requestMeta(context: ToolContext): Map<String, Any>? =
+    if (mcpSessionManager.hasProgressConsumers) {
+      mapOf(PROGRESS_TOKEN_KEY to (context.functionCallId ?: Uuid.random()))
+    } else {
+      null
+    }
 
   private suspend fun <T> retrySessionCall(
     times: Int = 4,
@@ -96,6 +122,9 @@ internal constructor(
     get() = mcpSchemaTool.meta()
 
   companion object {
+    /** Key under which the MCP spec carries the progress token in a request's `_meta`. */
+    private const val PROGRESS_TOKEN_KEY = "progressToken"
+
     private val logger = LoggerFactory.getLogger(McpTool::class)
   }
 }

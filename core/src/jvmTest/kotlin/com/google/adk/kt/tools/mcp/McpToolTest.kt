@@ -25,14 +25,18 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import kotlinx.coroutines.reactor.mono
 import kotlinx.coroutines.test.runTest
 import org.mockito.kotlin.any
 import org.mockito.kotlin.anyOrNull
+import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.doReturn
 import org.mockito.kotlin.doReturnConsecutively
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.times
+import org.mockito.kotlin.verify
 import org.mockito.kotlin.verifyBlocking
 import org.mockito.kotlin.whenever
 
@@ -78,6 +82,54 @@ class McpToolTest {
     val result = mcpTool.run(toolContext, emptyMap())
 
     assertSingleTextResult(result, "test result")
+  }
+
+  @Test
+  fun run_withProgressConsumers_sendsFunctionCallIdAsProgressToken() = runTest {
+    whenever(mockMcpSession.callTool(any())) doReturn mono { textResult("ok") }
+    val sessionManagerWithConsumers =
+      mock<SessionManager> {
+        onBlocking { getSession(any(), anyOrNull()) } doReturn mockMcpSession
+        on { hasProgressConsumers } doReturn true
+      }
+    val tool = McpTool("testTool", "description", mcpSchemaTool, sessionManagerWithConsumers)
+
+    val unused = tool.run(testToolContext(functionCallId = "fc1"), emptyMap())
+
+    val request = argumentCaptor<McpSchema.CallToolRequest>()
+    verify(mockMcpSession).callTool(request.capture())
+    assertEquals("fc1", request.firstValue.progressToken())
+  }
+
+  @Test
+  fun run_withProgressConsumersAndNoFunctionCallId_sendsGeneratedProgressToken() = runTest {
+    whenever(mockMcpSession.callTool(any())) doReturn mono { textResult("ok") }
+    val sessionManagerWithConsumers =
+      mock<SessionManager> {
+        onBlocking { getSession(any(), anyOrNull()) } doReturn mockMcpSession
+        on { hasProgressConsumers } doReturn true
+      }
+    val tool = McpTool("testTool", "description", mcpSchemaTool, sessionManagerWithConsumers)
+
+    val unused = tool.run(testToolContext(functionCallId = null), emptyMap())
+
+    val request = argumentCaptor<McpSchema.CallToolRequest>()
+    verify(mockMcpSession).callTool(request.capture())
+    val token = request.firstValue.progressToken()
+    assertNotNull(token)
+    assertTrue(token.toString().isNotBlank())
+  }
+
+  @Test
+  fun run_withoutProgressConsumers_omitsRequestMeta() = runTest {
+    whenever(mockMcpSession.callTool(any())) doReturn mono { textResult("ok") }
+
+    // mcpTool's session manager has no progress consumers registered.
+    val unused = mcpTool.run(testToolContext(functionCallId = "fc1"), emptyMap())
+
+    val request = argumentCaptor<McpSchema.CallToolRequest>()
+    verify(mockMcpSession).callTool(request.capture())
+    assertNull(request.firstValue.meta())
   }
 
   @Test
@@ -161,6 +213,10 @@ class McpToolTest {
     // Four call attempts (initial + 3 retries) ⇒ four session fetches through the manager.
     verifyBlocking(mockSessionManager, times(4)) { getSession(any(), anyOrNull()) }
   }
+
+  /** A minimal successful tool result carrying a single text content. */
+  private fun textResult(text: String): McpSchema.CallToolResult =
+    McpSchema.CallToolResult.builder().addTextContent(text).build()
 
   /**
    * Asserts [result] is the JSON-native map McpTool.run produces for a [McpSchema.CallToolResult]

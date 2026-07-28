@@ -19,11 +19,13 @@ package com.google.adk.kt.tools.mcp.it
 import com.google.adk.kt.testing.testToolContext
 import com.google.adk.kt.tools.mcp.McpToolset
 import com.google.common.truth.Truth.assertThat
+import io.modelcontextprotocol.spec.McpSchema
 import java.nio.file.Files
 import java.time.Duration
 import java.util.concurrent.TimeUnit
 import kotlin.test.BeforeTest
 import kotlin.test.Test
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -88,6 +90,50 @@ class McpToolsetIntegrationTest {
   fun run_counterTool_incrementsServerStateAcrossCalls(): Unit = runBlocking {
     contract.run_counterTool_incrementsServerStateAcrossCalls()
   }
+
+  @Test
+  fun run_slowToolWithProgressConsumer_receivesNotificationsEchoingTheProgressToken(): Unit =
+    runBlocking {
+      // Unbounded so the consumer, which the SDK invokes on another thread, never blocks or drops.
+      val notifications = Channel<McpSchema.ProgressNotification>(Channel.UNLIMITED)
+
+      newToolset(
+          progressConsumers =
+            listOf({
+              val unused = notifications.trySend(it)
+            })
+        )
+        .use { toolset ->
+          val slow = toolset.getTools().single { it.name == FakeMcpServer.TOOL_SLOW }
+
+          val result =
+            slow.run(
+              testToolContext(functionCallId = PROGRESS_FUNCTION_CALL_ID),
+              mapOf("steps" to SLOW_STEPS),
+            )
+
+          // Notifications are dispatched fire-and-forget, so some may still be in flight when the
+          // call returns; wait for all of them rather than asserting straight away.
+          val received =
+            withTimeout(PROGRESS_TIMEOUT_MILLIS) {
+              buildList { repeat(SLOW_STEPS) { add(notifications.receive()) } }
+            }
+
+          assertThat(textOf(result)).isEqualTo("done")
+          // The server echoes back the token ADK put in the request's _meta, which is what proves
+          // ADK opted in; without a token a spec-conformant server emits nothing at all.
+          assertThat(received.map { it.progressToken() })
+            .containsExactly(
+              PROGRESS_FUNCTION_CALL_ID,
+              PROGRESS_FUNCTION_CALL_ID,
+              PROGRESS_FUNCTION_CALL_ID,
+              PROGRESS_FUNCTION_CALL_ID,
+            )
+          // Order is not asserted: dispatch is concurrent, so the four may arrive interleaved.
+          assertThat(received.map { it.progress() }).containsExactly(1.0, 2.0, 3.0, 4.0)
+          assertThat(received.map { it.total() }).containsExactly(4.0, 4.0, 4.0, 4.0)
+        }
+    }
 
   @Test
   fun run_failingTool_returnsToolExecutionErrorVerbatim(): Unit = runBlocking {
@@ -212,6 +258,18 @@ class McpToolsetIntegrationTest {
   private companion object {
     /** How long to wait for a SIGKILL'd child process to actually exit before failing. */
     private const val KILL_TIMEOUT_SECONDS: Long = 10
+
+    /**
+     * Steps requested from the `slow` tool. Deliberately different from the server's
+     * [DEFAULT_SLOW_STEPS] so the assertion also proves the argument crossed the wire.
+     */
+    private const val SLOW_STEPS = 4
+
+    /** Function call id used as the progress token, so the echoed token is recognizable. */
+    private const val PROGRESS_FUNCTION_CALL_ID = "fc-progress-probe"
+
+    /** How long to wait for every progress notification to reach the consumer. */
+    private const val PROGRESS_TIMEOUT_MILLIS: Long = 30_000
 
     /**
      * Request timeout for the process-kill test. Kept short because the first post-kill call blocks

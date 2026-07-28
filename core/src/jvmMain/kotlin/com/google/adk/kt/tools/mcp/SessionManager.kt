@@ -45,4 +45,14 @@ internal interface SessionManager {
 
   /** Closes every session this manager created. Safe to call more than once. */
   fun closeAll()
+
+  /**
+   * Whether any progress consumer is registered on the sessions this manager creates.
+   *
+   * MCP progress is opt-in per request: a server may only emit progress notifications that
+   * reference a progress token the client supplied, so [McpTool] has to attach one for a consumer
+   * to ever be called. It attaches the token only when this is `true`, so servers are not asked to
+   * produce progress that nothing reads.
+   */
+  val hasProgressConsumers: Boolean
 }
