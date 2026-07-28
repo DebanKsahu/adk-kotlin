@@ -19,7 +19,9 @@ package com.google.adk.kt.tools.mcp
 import com.google.adk.kt.agents.ReadonlyContext
 import com.google.adk.kt.logging.LoggerFactory
 import com.google.adk.kt.tools.BaseTool
+import com.google.adk.kt.tools.ToolFilter
 import com.google.adk.kt.tools.Toolset
+import com.google.adk.kt.tools.isToolSelected
 import com.google.adk.kt.tools.mcp.McpToolException.McpToolLoadingException
 import io.modelcontextprotocol.client.McpAsyncClient
 import io.modelcontextprotocol.spec.McpSchema
@@ -45,7 +47,7 @@ import kotlinx.coroutines.sync.withLock
  *           command = "npx",
  *           args = listOf("-y", "@modelcontextprotocol/server-filesystem"),
  *         ),
- *       toolFilter = listOf("read_file", "list_directory"),
+ *       toolFilter = ToolFilter.allowList("read_file", "list_directory"),
  *     )
  *     .toToolset()
  * ```
@@ -55,7 +57,7 @@ import kotlinx.coroutines.sync.withLock
 class McpToolset
 internal constructor(
   private val mcpSessionManager: SessionManager,
-  private val toolFilter: ((BaseTool) -> Boolean)? = null,
+  private val toolFilter: ToolFilter? = null,
   private val headerProvider: (suspend (ReadonlyContext) -> Map<String, String>)? = null,
   private val useMcpResources: Boolean = false,
   private val maxMcpResourceLength: Int = DEFAULT_MAX_RESOURCE_LENGTH,
@@ -65,7 +67,7 @@ internal constructor(
   private var cachedTools: List<BaseTool>? = null
 
   override suspend fun getTools(readonlyContext: ReadonlyContext?): List<BaseTool> =
-    initAndGetTools(readonlyContext).filter { toolFilter?.invoke(it) ?: true }
+    initAndGetTools(readonlyContext).filter { toolFilter.isToolSelected(it, readonlyContext) }
 
   private suspend fun initAndGetTools(readonlyContext: ReadonlyContext?): List<BaseTool> =
     toolsMutex.withLock {
@@ -187,9 +189,10 @@ internal constructor(
    * @property sseConnectionParams Connection parameters for an MCP server reached over SSE.
    * @property streamableHttpConnectionParams Connection parameters for an MCP server reached over
    *   the Streamable HTTP transport.
-   * @property toolFilter Optional allowlist of tool names; when set, only tools whose name appears
-   *   in the list will be exposed to the agent. When `null`, all tools advertised by the server are
-   *   exposed.
+   * @property toolFilter Optional filter selecting which tools are exposed to the agent. Use
+   *   [ToolFilter.AllowList] (or the [ToolFilter.allowList] helper) to keep tools by name, or
+   *   [ToolFilter.Predicate] for context-aware selection that can consult the [ReadonlyContext].
+   *   When `null`, all tools advertised by the server are exposed.
    * @property useMcpResources When `true`, resource-related tools (`list_mcp_resources`,
    *   `list_mcp_resource_templates`, `load_mcp_resource`) are added to the toolset, granting the
    *   agent access to MCP resources exposed by the server. Defaults to `false`.
@@ -200,7 +203,7 @@ internal constructor(
     val stdioConnectionParams: McpConnectionParameters.Stdio? = null,
     val sseConnectionParams: McpConnectionParameters.Sse? = null,
     val streamableHttpConnectionParams: McpConnectionParameters.StreamableHttp? = null,
-    val toolFilter: List<String>? = null,
+    val toolFilter: ToolFilter? = null,
     val useMcpResources: Boolean = false,
     val maxMcpResourceLength: Int = DEFAULT_MAX_RESOURCE_LENGTH,
   ) {
@@ -232,13 +235,9 @@ internal constructor(
 
       val connectionParams = params.first()
 
-      val filter: ((BaseTool) -> Boolean)? = toolFilter?.let { filterList ->
-        { tool: BaseTool -> tool.name in filterList }
-      }
-
       return McpToolset(
         McpSessionManager(connectionParams, progressConsumers = progressConsumers),
-        filter,
+        toolFilter,
         headerProvider,
         useMcpResources,
         maxMcpResourceLength,
@@ -249,18 +248,7 @@ internal constructor(
     internal fun toToolset(
       sessionManager: SessionManager,
       headerProvider: (suspend (ReadonlyContext) -> Map<String, String>)? = null,
-    ): McpToolset {
-      val filter: ((BaseTool) -> Boolean)? = toolFilter?.let { filterList ->
-        { tool: BaseTool -> tool.name in filterList }
-      }
-
-      return McpToolset(
-        sessionManager,
-        filter,
-        headerProvider,
-        useMcpResources,
-        maxMcpResourceLength,
-      )
-    }
+    ): McpToolset =
+      McpToolset(sessionManager, toolFilter, headerProvider, useMcpResources, maxMcpResourceLength)
   }
 }

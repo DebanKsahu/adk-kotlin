@@ -16,6 +16,8 @@
 
 package com.google.adk.kt.tools.mcp
 
+import com.google.adk.kt.agents.ReadonlyContext
+import com.google.adk.kt.tools.ToolFilter
 import com.google.adk.kt.tools.mcp.McpToolException.McpToolLoadingException
 import io.modelcontextprotocol.client.McpAsyncClient
 import io.modelcontextprotocol.spec.McpSchema
@@ -23,8 +25,10 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
+import kotlin.test.assertSame
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.reactor.mono
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.mockito.kotlin.any
 import org.mockito.kotlin.anyOrNull
@@ -61,9 +65,7 @@ class McpToolsetTest {
       mock<SessionManager> { onBlocking { getSession(any(), anyOrNull()) } doReturn mockMcpSession }
 
     // Create Toolset with a filter that only allows "tool1" and "tool3"
-    val filter: (com.google.adk.kt.tools.BaseTool) -> Boolean = { tool ->
-      tool.name == "tool1" || tool.name == "tool3"
-    }
+    val filter = ToolFilter.Predicate { tool, _ -> tool.name == "tool1" || tool.name == "tool3" }
 
     val mcpToolset = McpToolset(mockSessionManager, filter)
 
@@ -262,7 +264,7 @@ class McpToolsetTest {
         // sseConnectionParams are required for the public toToolset() to pass validation,
         // but are not used when a sessionManager is provided.
         sseConnectionParams = McpConnectionParameters.Sse(url = "http://localhost:1234"),
-        toolFilter = listOf("tool1"),
+        toolFilter = ToolFilter.allowList("tool1"),
       )
 
     val toolset = config.toToolset(mockSessionManager)
@@ -270,6 +272,39 @@ class McpToolsetTest {
     val tools = toolset.getTools()
     assertEquals(1, tools.size)
     assertEquals("tool1", tools[0].name)
+  }
+
+  @Test
+  fun mcpToolsetConfig_toToolset_predicateFilterIsContextAware() = runBlocking {
+    val mockMcpSession = mock<McpAsyncClient>()
+    val toolsList =
+      listOf(
+        McpSchema.Tool.builder().name("tool1").description("desc 1").inputSchema(null).build(),
+        McpSchema.Tool.builder().name("tool2").description("desc 2").inputSchema(null).build(),
+      )
+    val toolsResponse = McpSchema.ListToolsResult(toolsList, null)
+    whenever(mockMcpSession.listTools()) doReturn mono { toolsResponse }
+    val mockSessionManager =
+      mock<SessionManager> { onBlocking { getSession(any(), anyOrNull()) } doReturn mockMcpSession }
+
+    val context = mock<ReadonlyContext>()
+    var received: ReadonlyContext? = null
+    val config =
+      McpToolset.McpToolsetConfig(
+        sseConnectionParams = McpConnectionParameters.Sse(url = "http://localhost:1234"),
+        toolFilter =
+          ToolFilter.Predicate { tool, ctx ->
+            received = ctx
+            tool.name == "tool1"
+          },
+      )
+
+    val toolset = config.toToolset(mockSessionManager)
+    val tools = toolset.getTools(context)
+
+    assertEquals(1, tools.size)
+    assertEquals("tool1", tools[0].name)
+    assertSame(context, received)
   }
 
   @Test
@@ -377,7 +412,7 @@ class McpToolsetTest {
     val config =
       McpToolset.McpToolsetConfig(
         sseConnectionParams = McpConnectionParameters.Sse(url = "http://localhost:1234"),
-        toolFilter = emptyList(),
+        toolFilter = ToolFilter.AllowList(emptySet()),
       )
 
     val toolset = config.toToolset(mockSessionManager)
