@@ -243,7 +243,7 @@ class McpToolsetTest {
     mcpToolset.close()
 
     // The toolset delegates teardown to the manager, which owns every session it created.
-    verify(mockSessionManager, times(1)).closeAll()
+    verify(mockSessionManager, times(1)).close()
   }
 
   @Test

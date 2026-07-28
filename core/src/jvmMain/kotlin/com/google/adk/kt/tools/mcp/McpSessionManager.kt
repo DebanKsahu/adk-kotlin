@@ -35,8 +35,8 @@ import kotlinx.coroutines.sync.withLock
  * Sessions are pooled by a key derived from the connection parameters and the per-call headers: a
  * stdio connection ignores headers and always maps to a single shared session, while SSE and
  * Streamable HTTP connections get one session per distinct header set. The pool is the single owner
- * of every session, so [closeAll] can tear them all down and [getSession] replaces a dead one in
- * place (via its `stale` parameter) for everyone sharing it.
+ * of every session, so [close] can tear them all down and [getSession] replaces a dead one in place
+ * (via its `stale` parameter) for everyone sharing it.
  */
 internal class McpSessionManager(
   private val connectionParams: McpConnectionParameters,
@@ -59,9 +59,9 @@ internal class McpSessionManager(
    * `asyncio.Lock`.
    *
    * Tradeoff: because the lock spans initialization, a slow [openSession] blocks every other
-   * [getSession] -- even for distinct header keys -- and a concurrent [closeAll] (which acquires
-   * this lock via `runBlocking`) blocks its calling thread until the in-flight init completes. This
-   * is acceptable for the expected workloads (stdio and static-header setups have a single session;
+   * [getSession] -- even for distinct header keys -- and a concurrent [close] (which acquires this
+   * lock via `runBlocking`) blocks its calling thread until the in-flight init completes. This is
+   * acceptable for the expected workloads (stdio and static-header setups have a single session;
    * per-header sessions are low-concurrency). If highly concurrent per-user sessions become a
    * bottleneck, pool `Deferred<McpAsyncClient>` and `await` it outside the lock so distinct keys
    * initialize in parallel and the lock hold-time stays tiny.
@@ -105,16 +105,15 @@ internal class McpSessionManager(
         }
       }
 
-  // Not suspend: it's driven by the non-suspend AutoCloseable.close(). runBlocking bridges the
-  // coroutine Mutex that getSession holds across a suspending initialize(). closeAll's own critical
-  // section is brief: snapshot + clear so an in-flight getSession can't re-pool afterwards, then
-  // the
-  // client.close() calls run outside it (fire-and-forget).
+  // Not suspend: AutoCloseable.close() isn't. runBlocking bridges the coroutine Mutex that
+  // getSession holds across a suspending initialize(). The critical section is brief: snapshot +
+  // clear so an in-flight getSession can't re-pool afterwards, then the client.close() calls run
+  // outside it (fire-and-forget).
   //
   // Warning: acquiring the lock can still block this thread if a getSession is mid-initialize (it
   // holds the lock across the network round-trip); the wait is bounded by the init timeout, not a
   // deadlock. See the [mutex] doc for the coarse-lock tradeoff and how to avoid it if needed.
-  override fun closeAll() {
+  override fun close() {
     val toClose = runBlocking {
       mutex.withLock { sessions.values.toList().also { sessions.clear() } }
     }

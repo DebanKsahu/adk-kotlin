@@ -215,7 +215,7 @@ class McpToolsetIntegrationTest {
 
   // Regression guard for the session-ownership leak. Tools no longer own sessions: they share one
   // pooled session owned by the SessionManager, reinit replaces that pooled entry in place, and
-  // McpToolset.close() -> SessionManager.closeAll() tears down every session it created. So after a
+  // McpToolset.close() -> SessionManager.close() tears down every session it created. So after a
   // shared-server death, recovery, and close(), no recorded process is left alive.
   @Test
   fun close_afterToolsReinitialize_leavesNoOrphanProcesses(): Unit = runBlocking {

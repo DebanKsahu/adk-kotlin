@@ -110,7 +110,7 @@ class McpSessionManagerTest {
     }
 
   @Test
-  fun closeAll_closesEveryPooledSessionAndClearsPool(): Unit = runBlocking {
+  fun close_closesEveryPooledSessionAndClearsPool(): Unit = runBlocking {
     val first = mock<McpAsyncClient>()
     val second = mock<McpAsyncClient>()
     val queue = ArrayDeque(listOf(first, second))
@@ -125,7 +125,7 @@ class McpSessionManagerTest {
       )
 
     val s1 = manager.getSession()
-    manager.closeAll()
+    manager.close()
     verify(first, times(1)).close()
 
     // Pool is cleared, so the next fetch builds a fresh client.
@@ -133,6 +133,16 @@ class McpSessionManagerTest {
     assertNotSame(s1, s2)
     assertSame(second, s2)
     assertEquals(2, opens)
+  }
+
+  @Test
+  fun close_isUsableWithUse(): Unit = runBlocking {
+    val client = mock<McpAsyncClient>()
+    val manager = McpSessionManager(sseParams, sessionOpener = { client })
+
+    manager.use { assertSame(client, it.getSession()) } // Compiles only if AutoCloseable.
+
+    verify(client, times(1)).close()
   }
 
   @Test

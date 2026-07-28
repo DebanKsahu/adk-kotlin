@@ -164,7 +164,7 @@ internal constructor(
   }
 
   override fun close() {
-    mcpSessionManager.closeAll()
+    mcpSessionManager.close()
     cachedTools = null
   }
 

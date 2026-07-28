@@ -23,10 +23,10 @@ import io.modelcontextprotocol.client.McpAsyncClient
  *
  * Implementations are the single owner of the sessions they hand out: sessions are pooled and
  * shared (so a stdio server is backed by exactly one child process), transparently replaced when
- * they die, and torn down wholesale on [closeAll]. Callers ([McpTool], [McpToolset]) hold a
- * reference to the manager rather than caching sessions themselves.
+ * they die, and torn down wholesale on [close]. Callers ([McpTool], [McpToolset]) hold a reference
+ * to the manager rather than caching sessions themselves.
  */
-internal interface SessionManager {
+internal interface SessionManager : AutoCloseable {
   /**
    * Returns an initialized session for the given [headers], creating and initializing one if none
    * is pooled yet. Sessions are keyed so that equivalent [headers] share a single session (a stdio
@@ -43,8 +43,12 @@ internal interface SessionManager {
     stale: McpAsyncClient? = null,
   ): McpAsyncClient
 
-  /** Closes every session this manager created. Safe to call more than once. */
-  fun closeAll()
+  /**
+   * Closes every session this manager created. Safe to call more than once.
+   *
+   * Being [AutoCloseable] allows `use {}`, and matches `MCPSessionManager.close` in ADK Python.
+   */
+  override fun close()
 
   /**
    * Whether any progress consumer is registered on the sessions this manager creates.

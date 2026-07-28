@@ -37,7 +37,7 @@ import kotlinx.coroutines.reactor.awaitSingleOrNull
  * The tool holds no session of its own: it fetches the shared session from [mcpSessionManager] on
  * each call and, on failure, asks the manager to reinitialize it. Because the manager owns the
  * session pool, a reinit is seen by every tool sharing the session and the toolset can close them
- * all via [SessionManager.closeAll].
+ * all via [SessionManager.close].
  */
 class McpTool
 internal constructor(
