@@ -19,9 +19,9 @@ plugins {
   alias(libs.plugins.dokka)
   kotlin("jvm") version "2.3.21" apply false
   kotlin("multiplatform") version "2.3.21" apply false
-  id("com.android.library") version "9.2.1" apply false
-  id("com.android.application") version "9.2.1" apply false
-  id("com.android.kotlin.multiplatform.library") version "9.2.1" apply false
+  id("com.android.library") version "9.3.1" apply false
+  id("com.android.application") version "9.3.1" apply false
+  id("com.android.kotlin.multiplatform.library") version "9.3.1" apply false
   id("com.google.cloud.artifactregistry.gradle-plugin") version "2.2.4" apply false
   kotlin("plugin.serialization") version "2.3.21" apply false
   alias(libs.plugins.gradle.test.retry) apply false
@@ -136,13 +136,13 @@ subprojects {
 
     // Single Dokka-backed `-javadoc.jar`, attached to every JVM/KMP
     // publication this project produces. AGP's Android single-variant
-    // publication (the firebase module) ships its own (empty-ish) javadoc
-    // jar via `withJavadocJar()`; we skip the Dokka one there to avoid a
+    // publication (the firebase module) ships its own javadoc jar via
+    // `withJavadocJar()`; we skip the Dokka one there to avoid a
     // duplicate-artifact error at publish time.
     val dokkaJavadocJar =
       tasks.register<Jar>("dokkaJavadocJar") {
         archiveClassifier.set("javadoc")
-        from(tasks.named("dokkaHtml"))
+        from(tasks.named("dokkaGeneratePublicationHtml"))
       }
 
     configure<PublishingExtension> {
