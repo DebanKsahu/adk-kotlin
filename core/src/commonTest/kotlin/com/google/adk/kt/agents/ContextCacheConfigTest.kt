@@ -18,7 +18,7 @@
 
 package com.google.adk.kt.agents
 
-import com.google.genai.kotlin.types.HttpOptions
+import com.google.adk.kt.types.HttpOptions
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -49,7 +49,7 @@ class ContextCacheConfigTest {
 
   @Test
   fun construct_customValues_exposesProperties() {
-    val httpOptions = HttpOptions(timeout = 10_000)
+    val httpOptions = HttpOptions(timeout = 10.seconds)
     val config =
       ContextCacheConfig(
         cacheIntervals = 5,

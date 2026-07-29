@@ -21,14 +21,15 @@ import com.google.adk.kt.agents.ContextCacheConfig
 import com.google.adk.kt.types.Content
 import com.google.adk.kt.types.FunctionCall
 import com.google.adk.kt.types.GenerateContentConfig
+import com.google.adk.kt.types.HttpOptions
 import com.google.adk.kt.types.Part
 import com.google.adk.kt.types.Role
 import com.google.adk.kt.types.ToolConfig
-import com.google.genai.kotlin.types.HttpOptions
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.time.Clock
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.test.runTest
 
 class GeminiContextCacheManagerTest {
@@ -202,7 +203,7 @@ class GeminiContextCacheManagerTest {
   fun handleContextCaching_createHttpOptionsConfigured_passedThroughToCreate() = runTest {
     val fake = FakeCacheClient(createdName = "cache/recreated")
     val manager = GeminiContextCacheManager("gemini-2.0-flash", fake)
-    val httpOptions = HttpOptions(timeout = 5_000)
+    val httpOptions = HttpOptions(timeout = 5.seconds)
     val request =
       baseRequest(tokenCount = 8000)
         .copy(cacheConfig = ContextCacheConfig(createHttpOptions = httpOptions))

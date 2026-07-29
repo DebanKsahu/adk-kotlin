@@ -27,8 +27,8 @@ import com.google.adk.kt.models.CacheMetadata
 import com.google.adk.kt.models.Gemini
 import com.google.adk.kt.runners.InMemoryRunner
 import com.google.adk.kt.types.Content
+import com.google.adk.kt.types.HttpOptions
 import com.google.adk.kt.types.Role
-import com.google.genai.kotlin.types.HttpOptions
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
@@ -189,7 +189,7 @@ fun main() = runBlocking {
           minTokens = 0,
           // Fail open if cache creation is slow: cap it at 30s, after which the request proceeds
           // uncached instead of blocking on cache creation.
-          createHttpOptions = HttpOptions(timeout = 30_000),
+          createHttpOptions = HttpOptions(timeout = 30.seconds),
         ),
     )
   val runner = InMemoryRunner(app = app)

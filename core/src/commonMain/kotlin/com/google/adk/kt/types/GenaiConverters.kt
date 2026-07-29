@@ -46,6 +46,7 @@ import com.google.genai.kotlin.types.GroundingChunkRetrievedContext as GenAiGrou
 import com.google.genai.kotlin.types.GroundingChunkWeb as GenAiGroundingChunkWeb
 import com.google.genai.kotlin.types.GroundingMetadata as GenAiGroundingMetadata
 import com.google.genai.kotlin.types.GroundingSupport as GenAiGroundingSupport
+import com.google.genai.kotlin.types.HttpOptions as GenAiHttpOptions
 import com.google.genai.kotlin.types.LogprobsResult as GenAiLogprobsResult
 import com.google.genai.kotlin.types.LogprobsResultCandidate as GenAiLogprobsResultCandidate
 import com.google.genai.kotlin.types.LogprobsResultTopCandidates as GenAiLogprobsResultTopCandidates
@@ -880,4 +881,14 @@ internal fun ThinkingConfig.toGenaiSdk(): GenAiThinkingConfig =
     includeThoughts = includeThoughts,
     thinkingBudget = thinkingBudget,
     thinkingLevel = thinkingLevel?.toGenaiSdk(),
+  )
+
+// --- HttpOptions ---
+/** Converts an ADK [HttpOptions] to a [GenAiHttpOptions] for the GenAI SDK. */
+internal fun HttpOptions.toGenaiSdk(): GenAiHttpOptions =
+  GenAiHttpOptions(
+    baseUrl = baseUrl,
+    apiVersion = apiVersion,
+    headers = headers,
+    timeout = timeout?.inWholeMilliseconds?.toInt(),
   )
