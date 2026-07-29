@@ -148,6 +148,8 @@ class FakeRunner : Runner {
     newMessage: Content,
     runConfig: RunConfig?,
   ): Iterator<Event> = emptyList<Event>().iterator()
+
+  override fun close() {}
 }
 
 @RunWith(JUnit4::class)
