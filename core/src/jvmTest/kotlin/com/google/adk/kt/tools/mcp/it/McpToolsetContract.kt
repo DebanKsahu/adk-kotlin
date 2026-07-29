@@ -134,6 +134,7 @@ class McpToolsetContract(private val harness: McpToolsetHarness) {
         FakeMcpServer.TOOL_SLOW,
         FakeMcpServer.TOOL_FAIL,
         FakeMcpServer.TOOL_HANG,
+        FakeMcpServer.TOOL_GET_RECORD,
       )
 
     /** The synthetic tools `McpToolset` appends when `useMcpResources` is enabled. */

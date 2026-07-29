@@ -65,9 +65,22 @@ object FakeMcpServer {
   const val TOOL_SLOW = "slow"
   const val TOOL_FAIL = "fail"
   const val TOOL_HANG = "hang"
+  const val TOOL_GET_RECORD = "get_record"
 
   /** Message the [TOOL_FAIL] tool returns inside its `isError: true` result. */
   const val FAIL_MESSAGE = "intentional tool execution error from the 'fail' tool"
+
+  /**
+   * The single id [TOOL_GET_RECORD] has no record for. Arbitrary/non-suggestive (not `404`) so a
+   * model can't predict the miss and must actually call the tool.
+   */
+  const val MISSING_RECORD_ID = 4242
+
+  /** Content [TOOL_GET_RECORD] returns for an existing record [id]. */
+  fun recordContent(id: Int): String = "record-$id"
+
+  /** Error text [TOOL_GET_RECORD] returns (isError=true) when asked for [MISSING_RECORD_ID]. */
+  fun recordNotFoundMessage(id: Int): String = "no record found with id $id"
 
   // Resource URIs
   const val RESOURCE_GREETING_URI = "mem://greeting"
@@ -156,6 +169,7 @@ private fun toolSpecifications(token: String): List<SyncToolSpecification> =
     slowTool(),
     failTool(),
     hangTool(),
+    getRecordTool(),
   )
 
 /**
@@ -282,6 +296,28 @@ private fun hangTool(): SyncToolSpecification =
   ) { _, _ ->
     CountDownLatch(1).await() // a latch that is never counted down: parks here indefinitely
     textResult("unreachable")
+  }
+
+/**
+ * `get_record(id) -> record`, except [FakeMcpServer.MISSING_RECORD_ID] returns an in-band error
+ * (isError=true). Neutral name/description so nothing signals failure before the call -- backs the
+ * live agent happy/error pair.
+ */
+private fun getRecordTool(): SyncToolSpecification =
+  syncTool(
+    name = FakeMcpServer.TOOL_GET_RECORD,
+    description = "Returns the stored record for the given id.",
+    inputSchema = objectSchema(properties = mapOf("id" to integerProp()), required = listOf("id")),
+  ) { _, request ->
+    val id = argInt(request.arguments(), "id")
+    if (id == FakeMcpServer.MISSING_RECORD_ID) {
+      McpSchema.CallToolResult.builder()
+        .addTextContent(FakeMcpServer.recordNotFoundMessage(id))
+        .isError(true)
+        .build()
+    } else {
+      textResult(FakeMcpServer.recordContent(id))
+    }
   }
 
 // Resources
