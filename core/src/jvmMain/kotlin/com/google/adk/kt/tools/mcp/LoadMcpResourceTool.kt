@@ -23,7 +23,6 @@ import com.google.adk.kt.tools.mcp.McpToolException.McpToolExecutionException
 import com.google.adk.kt.types.FunctionDeclaration
 import com.google.adk.kt.types.Schema
 import com.google.adk.kt.types.Type
-import io.modelcontextprotocol.spec.McpSchema
 import kotlinx.coroutines.CancellationException
 
 /**
@@ -38,11 +37,7 @@ internal class LoadMcpResourceTool(
   override suspend fun run(context: ToolContext, args: Map<String, Any>): Any {
     try {
       val uri = args[URI] as? String ?: throw IllegalArgumentException("Resource URI is required.")
-      val contents =
-        mcpToolset.readResource(uri, context.invocationContext.toReadonlyContext()) as? List<*>
-          ?: throw IllegalArgumentException(
-            "MCP server returned an unexpected response structure for URI: $uri"
-          )
+      val contents = mcpToolset.readResource(uri, context.invocationContext.toReadonlyContext())
 
       if (contents.isEmpty()) {
         return ""
@@ -50,18 +45,17 @@ internal class LoadMcpResourceTool(
       return contents
         .map { content ->
           when (content) {
-            is McpSchema.TextResourceContents -> {
-              val text = content.text() ?: ""
+            is McpResourceContent.Text -> {
+              val text = content.text
               if (text.length > maxMcpResourceLength) {
                 text.take(maxMcpResourceLength) + "... [Content truncated due to size limit]"
               } else {
                 text
               }
             }
-            is McpSchema.BlobResourceContents -> {
+            is McpResourceContent.Blob -> {
               "[Warning: Binary data found at this URI, cannot display raw content]"
             }
-            else -> content.toString()
           }
         }
         .joinToString("\n\n")

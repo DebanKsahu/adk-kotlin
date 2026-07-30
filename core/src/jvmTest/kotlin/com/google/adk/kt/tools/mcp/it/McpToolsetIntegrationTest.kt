@@ -77,6 +77,11 @@ class McpToolsetIntegrationTest {
   }
 
   @Test
+  fun listResources_returnsEntryCarryingNameAndUri(): Unit = runBlocking {
+    contract.listResources_returnsEntryCarryingNameAndUri()
+  }
+
+  @Test
   fun run_echoTool_returnsTheArgumentVerbatim(): Unit = runBlocking {
     contract.run_echoTool_returnsTheArgumentVerbatim()
   }

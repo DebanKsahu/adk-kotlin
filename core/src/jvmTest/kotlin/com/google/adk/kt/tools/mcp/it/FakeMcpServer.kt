@@ -84,6 +84,9 @@ object FakeMcpServer {
 
   // Resource URIs
   const val RESOURCE_GREETING_URI = "mem://greeting"
+
+  /** The name (distinct from [RESOURCE_GREETING_URI]) the greeting resource is advertised under. */
+  const val RESOURCE_GREETING_NAME = "greeting"
 }
 
 /** Default number of steps for the [TOOL_SLOW] tool. */
@@ -330,7 +333,7 @@ private fun greetingResource(token: String): SyncResourceSpecification {
   val resource =
     McpSchema.Resource.builder()
       .uri(FakeMcpServer.RESOURCE_GREETING_URI)
-      .name("greeting")
+      .name(FakeMcpServer.RESOURCE_GREETING_NAME)
       .description("A greeting that embeds the per-run token.")
       .mimeType("text/plain")
       .build()

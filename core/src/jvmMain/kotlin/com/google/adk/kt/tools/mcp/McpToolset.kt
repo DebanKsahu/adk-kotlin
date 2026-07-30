@@ -128,27 +128,121 @@ internal constructor(
     val capabilities = session.serverCapabilities
 
     if (useMcpResources && capabilities?.resources() != null) {
-      tools.add(ListMcpResourcesTool(session))
+      tools.add(ListMcpResourcesTool(this))
       tools.add(LoadMcpResourceTool(this, maxMcpResourceLength))
+      // Still on the raw session: this tool is scheduled for removal in 1.0, so it is not worth
+      // rewiring through the toolset.
       tools.add(ListMcpResourceTemplatesTool(session))
     }
     return tools
   }
 
-  /** Returns a list of resource names available on the MCP server. */
-  suspend fun listResources(readonlyContext: ReadonlyContext? = null): List<String> {
-    val headers = readonlyContext?.let { headerProvider?.invoke(it) } ?: emptyMap()
-    val session = mcpSessionManager.getSession(headers)
-    val result = session.listResources().awaitSingle()
-    return result.resources().map { it.name() }
+  /**
+   * Lists a page of resources advertised by the MCP server.
+   *
+   * @param cursor An opaque pagination cursor from a previous [McpResourceListing.nextCursor], or
+   *   `null` to fetch the first page.
+   */
+  internal suspend fun listResources(
+    cursor: String? = null,
+    readonlyContext: ReadonlyContext? = null,
+  ): McpResourceListing {
+    val result =
+      withSession(readonlyContext) { session ->
+        // Always use the cursor-based overload (McpSchema.FIRST_PAGE == null) so a single page is
+        // fetched and the server's nextCursor is surfaced to the caller. The no-arg overload would
+        // auto-follow every cursor and collapse the whole catalog into one response, defeating
+        // page-by-page browsing (and blowing up context on servers with large resource catalogs).
+        session.listResources(cursor).awaitSingle()
+      }
+    return McpResourceListing(
+      resources = result.resources().map { it.toResourceInfo() },
+      nextCursor = result.nextCursor(),
+    )
   }
 
-  /** Fetches and returns a list of contents of the resource with the given URI. */
-  suspend fun readResource(uri: String, readonlyContext: ReadonlyContext? = null): Any {
+  /**
+   * Lists a page of resource templates advertised by the MCP server.
+   *
+   * @param cursor An opaque pagination cursor from a previous
+   *   [McpResourceTemplateListing.nextCursor], or `null` to fetch the first page.
+   */
+  internal suspend fun listResourceTemplates(
+    cursor: String? = null,
+    readonlyContext: ReadonlyContext? = null,
+  ): McpResourceTemplateListing {
+    val result =
+      withSession(readonlyContext) { session ->
+        // Single-page cursor overload, mirroring [listResources]; see the rationale there.
+        session.listResourceTemplates(cursor).awaitSingle()
+      }
+    return McpResourceTemplateListing(
+      resourceTemplates = result.resourceTemplates().map { it.toResourceTemplateInfo() },
+      nextCursor = result.nextCursor(),
+    )
+  }
+
+  /** Fetches and returns the contents of the resource with the given [uri]. */
+  internal suspend fun readResource(
+    uri: String,
+    readonlyContext: ReadonlyContext? = null,
+  ): List<McpResourceContent> {
+    val readResult =
+      withSession(readonlyContext) { session ->
+        session.readResource(McpSchema.ReadResourceRequest(uri)).awaitSingle()
+      }
+    return readResult.contents().map { it.toResourceContent() }
+  }
+
+  /**
+   * Runs [block] against a pooled MCP session, retrying a failed call on a replaced session.
+   *
+   * Like [McpTool]'s retry (which allows one more attempt than the [DEFAULT_RETRY_TIMES] used
+   * here), a session that failed is handed back as `stale` so the manager evicts and recreates it
+   * in place, which every caller sharing that session benefits from. Without this a dead pooled
+   * session is never replaced and every later resource call keeps failing.
+   *
+   * [IllegalArgumentException] is not retried, matching [handleLoadError]: the server rejected the
+   * request itself, so the retries repeat an identical round trip and only delay the error. An
+   * unknown resource uri is the common case, and a model guessing one in `load_mcp_resource` is
+   * routine.
+   *
+   * A session is marked stale only after a failure that is not attributable to the request, so a
+   * rejected request no longer evicts a healthy session out from under everyone sharing it. On
+   * stdio that eviction kills and respawns the server child process.
+   *
+   * [SessionManager.getSession] is inside the `try` because opening a session initializes it over
+   * the network, which can fail on its own and must retry like the call itself does.
+   *
+   * Only the round trip is retried; mapping the result into ADK types happens at the call site, so
+   * a mapping bug is never mistaken for a transient failure.
+   */
+  private suspend fun <T> withSession(
+    readonlyContext: ReadonlyContext?,
+    block: suspend (McpAsyncClient) -> T,
+  ): T {
     val headers = readonlyContext?.let { headerProvider?.invoke(it) } ?: emptyMap()
-    val session = mcpSessionManager.getSession(headers)
-    val readResult = session.readResource(McpSchema.ReadResourceRequest(uri)).awaitSingle()
-    return readResult.contents()
+    var stale: McpAsyncClient? = null
+    for (attempt in 1..DEFAULT_RETRY_TIMES) {
+      var session: McpAsyncClient? = null
+      try {
+        session = mcpSessionManager.getSession(headers, stale = stale)
+        return block(session)
+      } catch (e: CancellationException) {
+        throw e
+      } catch (e: IllegalArgumentException) {
+        throw e
+      } catch (e: Exception) {
+        if (attempt == DEFAULT_RETRY_TIMES) {
+          throw e
+        }
+        // Null when getSession itself failed, which leaves nothing to evict.
+        stale = session
+        logger.warn(e) { "Retrying MCP resource call, attempt $attempt: ${e.message}" }
+        delay(DEFAULT_RETRY_DELAY_MS)
+      }
+    }
+    error("Exhausted retries without returning or throwing")
   }
 
   private fun handleLoadError(e: Exception, attempt: Int) {
@@ -252,3 +346,59 @@ internal constructor(
       McpToolset(sessionManager, toolFilter, headerProvider, useMcpResources, maxMcpResourceLength)
   }
 }
+
+// The SDK records are plain Jackson bindings with no non-null validation, so a server may omit
+// any field. The non-null properties below default to "" rather than letting a Kotlin
+// platform-type assignment throw NPE from inside the mapper.
+
+private fun McpSchema.Resource.toResourceInfo(): McpResourceInfo =
+  McpResourceInfo(
+    name = name().orEmpty(),
+    uri = uri().orEmpty(),
+    title = title(),
+    description = description(),
+    mimeType = mimeType(),
+    size = size(),
+    annotations = annotations()?.toAnnotations(),
+    meta = meta(),
+  )
+
+private fun McpSchema.ResourceTemplate.toResourceTemplateInfo(): McpResourceTemplateInfo =
+  McpResourceTemplateInfo(
+    name = name().orEmpty(),
+    uriTemplate = uriTemplate().orEmpty(),
+    title = title(),
+    description = description(),
+    mimeType = mimeType(),
+    annotations = annotations()?.toAnnotations(),
+    meta = meta(),
+  )
+
+private fun McpSchema.Annotations.toAnnotations(): McpAnnotations =
+  McpAnnotations(
+    // `audience` is optional in the schema: annotations may carry only a priority.
+    audience = audience().orEmpty().map { McpRole(it.name.lowercase()) },
+    priority = priority(),
+    lastModified = lastModified(),
+  )
+
+// No else branch below: McpSchema.ResourceContents is a sealed interface permitting exactly the
+// two subtypes handled here, so the compiler proves the `when` exhaustive. An SDK upgrade that
+// adds a third subtype turns that proof into a compile error here, which is the signal we want.
+private fun McpSchema.ResourceContents.toResourceContent(): McpResourceContent =
+  when (this) {
+    is McpSchema.TextResourceContents ->
+      McpResourceContent.Text(
+        uri = uri().orEmpty(),
+        mimeType = mimeType(),
+        text = text().orEmpty(),
+        meta = meta(),
+      )
+    is McpSchema.BlobResourceContents ->
+      McpResourceContent.Blob(
+        uri = uri().orEmpty(),
+        mimeType = mimeType(),
+        blobBase64 = blob().orEmpty(),
+        meta = meta(),
+      )
+  }

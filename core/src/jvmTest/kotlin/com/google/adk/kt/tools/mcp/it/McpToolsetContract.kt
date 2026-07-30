@@ -17,10 +17,10 @@
 package com.google.adk.kt.tools.mcp.it
 
 import com.google.adk.kt.testing.testToolContext
+import com.google.adk.kt.tools.mcp.McpResourceContent
 import com.google.adk.kt.tools.mcp.McpToolset
 import com.google.adk.kt.types.Type
 import com.google.common.truth.Truth.assertThat
-import io.modelcontextprotocol.spec.McpSchema
 
 /**
  * Opens an [McpToolset] over the transport under test, runs [block] against it, and tears the
@@ -68,10 +68,20 @@ class McpToolsetContract(private val harness: McpToolsetHarness) {
 
   suspend fun readResource_returnsServerContentEmbeddingTheInjectedToken() =
     harness.withToolset(useMcpResources = false) { toolset ->
-      val contents = toolset.readResource(FakeMcpServer.RESOURCE_GREETING_URI) as List<*>
-      val text = (contents.single() as McpSchema.TextResourceContents).text()
+      val contents = toolset.readResource(FakeMcpServer.RESOURCE_GREETING_URI)
+      val text = (contents.single() as McpResourceContent.Text).text
       // Proves the token-injection channel and a real resources/read round-trip.
       assertThat(text).contains(INJECTED_TOKEN)
+    }
+
+  suspend fun listResources_returnsEntryCarryingNameAndUri() =
+    harness.withToolset(useMcpResources = false) { toolset ->
+      // A real resources/list round-trip: the typed entry carries both the programmatic name (per
+      // the spec `title` is the display name, not this) and the canonical uri, and that uri is
+      // exactly the identifier readResource takes.
+      val entry =
+        toolset.listResources().resources.single { it.uri == FakeMcpServer.RESOURCE_GREETING_URI }
+      assertThat(entry.name).isEqualTo(FakeMcpServer.RESOURCE_GREETING_NAME)
     }
 
   suspend fun run_echoTool_returnsTheArgumentVerbatim() =

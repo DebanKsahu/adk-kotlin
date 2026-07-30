@@ -34,6 +34,8 @@ import org.mockito.kotlin.any
 import org.mockito.kotlin.anyOrNull
 import org.mockito.kotlin.doReturn
 import org.mockito.kotlin.doReturnConsecutively
+import org.mockito.kotlin.eq
+import org.mockito.kotlin.isNull
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.times
 import org.mockito.kotlin.verify
@@ -340,32 +342,119 @@ class McpToolsetTest {
   }
 
   @Test
-  fun listResources_returnsResourceNames() = runTest {
+  fun listResources_returnsResourceEntries() = runTest {
     val mockMcpSession = mock<McpAsyncClient>()
 
     val resourceList =
       listOf(
         McpSchema.Resource.builder().name("resource1").uri("uri1").build(),
-        McpSchema.Resource.builder().name("resource2").uri("uri2").build(),
+        McpSchema.Resource.builder().name("resource2").uri("uri2").mimeType("text/plain").build(),
       )
-    val listResourcesResult = McpSchema.ListResourcesResult(resourceList, null)
-    whenever(mockMcpSession.listResources()) doReturn mono { listResourcesResult }
+    val listResourcesResult = McpSchema.ListResourcesResult(resourceList, "next-cursor")
+    whenever(mockMcpSession.listResources(isNull())) doReturn mono { listResourcesResult }
 
     val mockSessionManager =
       mock<SessionManager> { onBlocking { getSession(any(), anyOrNull()) } doReturn mockMcpSession }
 
     val mcpToolset = McpToolset(mockSessionManager)
-    val resources = mcpToolset.listResources()
+    val listing = mcpToolset.listResources()
 
-    assertEquals(listOf("resource1", "resource2"), resources)
-    verify(mockMcpSession, times(1)).listResources()
+    assertEquals(
+      listOf(
+        McpResourceInfo(name = "resource1", uri = "uri1"),
+        McpResourceInfo(name = "resource2", uri = "uri2", mimeType = "text/plain"),
+      ),
+      listing.resources,
+    )
+    assertEquals("next-cursor", listing.nextCursor)
+    verify(mockMcpSession, times(1)).listResources(isNull())
+  }
+
+  @Test
+  fun listResources_carriesEveryFieldTheServerSent() = runTest {
+    val mockMcpSession = mock<McpAsyncClient>()
+
+    val resource =
+      McpSchema.Resource.builder()
+        .name("resource1")
+        .uri("uri1")
+        .title("Resource One")
+        .description("the first resource")
+        .mimeType("text/plain")
+        .size(1234L)
+        .annotations(McpSchema.Annotations(listOf(McpSchema.Role.ASSISTANT), 0.7, "2026-01-01"))
+        .meta(mapOf("tenant" to "acme"))
+        .build()
+    whenever(mockMcpSession.listResources(isNull())) doReturn
+      mono { McpSchema.ListResourcesResult(listOf(resource), null) }
+
+    val mockSessionManager =
+      mock<SessionManager> { onBlocking { getSession(any(), anyOrNull()) } doReturn mockMcpSession }
+
+    val listing = McpToolset(mockSessionManager).listResources()
+
+    // The typed view is the only thing callers see, so it must not drop what the server sent.
+    assertEquals(
+      McpResourceInfo(
+        name = "resource1",
+        uri = "uri1",
+        title = "Resource One",
+        description = "the first resource",
+        mimeType = "text/plain",
+        size = 1234L,
+        annotations =
+          McpAnnotations(
+            audience = listOf(McpRole("assistant")),
+            priority = 0.7,
+            lastModified = "2026-01-01",
+          ),
+        meta = mapOf("tenant" to "acme"),
+      ),
+      listing.resources.single(),
+    )
+  }
+
+  @Test
+  fun listResourceTemplates_returnsTemplateEntries() = runTest {
+    val mockMcpSession = mock<McpAsyncClient>()
+
+    val templateList =
+      listOf(
+        McpSchema.ResourceTemplate.builder()
+          .name("tpl1")
+          .uriTemplate("file:///{path}")
+          .mimeType("text/plain")
+          .build()
+      )
+    val listTemplatesResult = McpSchema.ListResourceTemplatesResult(templateList, "next-cursor")
+    whenever(mockMcpSession.listResourceTemplates(isNull())) doReturn mono { listTemplatesResult }
+
+    val mockSessionManager =
+      mock<SessionManager> { onBlocking { getSession(any(), anyOrNull()) } doReturn mockMcpSession }
+
+    val mcpToolset = McpToolset(mockSessionManager)
+    val listing = mcpToolset.listResourceTemplates()
+
+    assertEquals(
+      listOf(
+        McpResourceTemplateInfo(
+          name = "tpl1",
+          uriTemplate = "file:///{path}",
+          mimeType = "text/plain",
+        )
+      ),
+      listing.resourceTemplates,
+    )
+    assertEquals("next-cursor", listing.nextCursor)
+    verify(mockMcpSession, times(1)).listResourceTemplates(isNull())
   }
 
   @Test
   fun readResource_returnsResourceContents() = runTest {
     val mockMcpSession = mock<McpAsyncClient>()
 
-    val textContents = McpSchema.TextResourceContents("file contents", "text/plain", "uri1")
+    val textContents =
+      McpSchema.TextResourceContents("uri1", "text/plain", "file contents", mapOf("page" to 1))
     val readResourceResult = McpSchema.ReadResourceResult(listOf(textContents))
     whenever(mockMcpSession.readResource(McpSchema.ReadResourceRequest("uri1"))) doReturn
       mono { readResourceResult }
@@ -376,8 +465,52 @@ class McpToolsetTest {
     val mcpToolset = McpToolset(mockSessionManager)
     val contents = mcpToolset.readResource("uri1")
 
-    assertEquals(listOf(textContents), contents)
+    assertEquals(
+      listOf(
+        McpResourceContent.Text(
+          uri = "uri1",
+          mimeType = "text/plain",
+          text = "file contents",
+          meta = mapOf("page" to 1),
+        )
+      ),
+      contents,
+    )
     verify(mockMcpSession, times(1)).readResource(McpSchema.ReadResourceRequest("uri1"))
+  }
+
+  @Test
+  fun readResource_toleratesAbsentPayloadFields() = runTest {
+    val mockMcpSession = mock<McpAsyncClient>()
+
+    // The SDK records apply no non-null validation, so a server can omit `text` or `blob`
+    // entirely. That must map to an empty payload rather than an NPE out of the mapper.
+    val readResourceResult =
+      McpSchema.ReadResourceResult(
+        listOf(
+          McpSchema.TextResourceContents("uri1", "text/plain", null),
+          McpSchema.BlobResourceContents("uri1", "application/octet-stream", null),
+        )
+      )
+    whenever(mockMcpSession.readResource(McpSchema.ReadResourceRequest("uri1"))) doReturn
+      mono { readResourceResult }
+
+    val mockSessionManager =
+      mock<SessionManager> { onBlocking { getSession(any(), anyOrNull()) } doReturn mockMcpSession }
+
+    val contents = McpToolset(mockSessionManager).readResource("uri1")
+
+    assertEquals(
+      listOf(
+        McpResourceContent.Text(uri = "uri1", mimeType = "text/plain", text = ""),
+        McpResourceContent.Blob(
+          uri = "uri1",
+          mimeType = "application/octet-stream",
+          blobBase64 = "",
+        ),
+      ),
+      contents,
+    )
   }
 
   @Test
@@ -394,6 +527,54 @@ class McpToolsetTest {
     val mcpToolset = McpToolset(mockSessionManager)
 
     assertFailsWith<IllegalArgumentException> { mcpToolset.readResource("nonexistent_resource") }
+
+    // A rejected request is not a broken session: exactly one round trip, and no eviction. A model
+    // guessing a wrong uri in load_mcp_resource is routine, and on stdio each eviction kills and
+    // respawns the server child process.
+    verify(mockMcpSession, times(1)).readResource(any<McpSchema.ReadResourceRequest>())
+    verifyBlocking(mockSessionManager, times(1)) { getSession(any(), isNull()) }
+  }
+
+  @Test
+  fun readResource_retriesOnTransientFailure_andReplacesTheSession() = runTest {
+    val failing = mock<McpAsyncClient>()
+    val healthy = mock<McpAsyncClient>()
+
+    whenever(failing.readResource(any<McpSchema.ReadResourceRequest>())) doReturn
+      mono { throw IllegalStateException("transport went away") }
+    whenever(healthy.readResource(any<McpSchema.ReadResourceRequest>())) doReturn
+      mono {
+        McpSchema.ReadResourceResult(
+          listOf(McpSchema.TextResourceContents("uri1", "text/plain", "recovered"))
+        )
+      }
+
+    val mockSessionManager =
+      mock<SessionManager> {
+        onBlocking { getSession(any(), anyOrNull()) } doReturnConsecutively listOf(failing, healthy)
+      }
+
+    val contents = McpToolset(mockSessionManager).readResource("uri1")
+
+    assertEquals("recovered", (contents.single() as McpResourceContent.Text).text)
+    // The failed session, and only it, is handed back for replacement.
+    verifyBlocking(mockSessionManager, times(1)) { getSession(any(), isNull()) }
+    verifyBlocking(mockSessionManager, times(1)) { getSession(any(), eq(failing)) }
+  }
+
+  @Test
+  fun readResource_stopsAfterBoundedRetries() = runTest {
+    val mockMcpSession = mock<McpAsyncClient>()
+    whenever(mockMcpSession.readResource(any<McpSchema.ReadResourceRequest>())) doReturn
+      mono { throw IllegalStateException("transport went away") }
+
+    val mockSessionManager =
+      mock<SessionManager> { onBlocking { getSession(any(), anyOrNull()) } doReturn mockMcpSession }
+
+    assertFailsWith<IllegalStateException> { McpToolset(mockSessionManager).readResource("uri1") }
+
+    // Bounded: three attempts, not an unbounded loop.
+    verify(mockMcpSession, times(3)).readResource(any<McpSchema.ReadResourceRequest>())
   }
 
   @Test
