@@ -83,7 +83,9 @@ internal class ListMcpResourcesTool(private val mcpToolset: McpToolset) :
     private const val DESCRIPTION =
       "List resources available on the MCP server. Returns one page of resources and, when more " +
         "pages are available, a 'nextCursor' value. To fetch the next page, call this tool again " +
-        "passing that value as the 'cursor' argument; repeat until no 'nextCursor' is returned."
+        "passing that value as the 'cursor' argument; repeat until no 'nextCursor' is returned. " +
+        "Each entry carries the resource's 'name' and 'uri': pass that 'uri' straight to " +
+        "load_mcp_resource to read it, which avoids re-resolving the name."
 
     private const val RESOURCE_NAME = "name"
     private const val RESOURCE_URI = "uri"

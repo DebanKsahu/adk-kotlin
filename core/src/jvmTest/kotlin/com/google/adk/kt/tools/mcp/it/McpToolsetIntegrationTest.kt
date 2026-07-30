@@ -82,6 +82,26 @@ class McpToolsetIntegrationTest {
   }
 
   @Test
+  fun loadMcpResource_byUnknownUri_returnsMessageInsteadOfThrowing(): Unit = runBlocking {
+    contract.run_loadMcpResource_byUnknownUri_returnsMessageInsteadOfThrowing()
+  }
+
+  @Test
+  fun loadMcpResource_byName_readsTheResourceOverTheWire(): Unit = runBlocking {
+    contract.run_loadMcpResource_byName_readsTheResourceOverTheWire()
+  }
+
+  @Test
+  fun loadMcpResource_byUri_readsTheResourceOverTheWire(): Unit = runBlocking {
+    contract.run_loadMcpResource_byUri_readsTheResourceOverTheWire()
+  }
+
+  @Test
+  fun loadMcpResource_unknownName_returnsMessageInsteadOfThrowing(): Unit = runBlocking {
+    contract.run_loadMcpResource_unknownName_returnsMessageInsteadOfThrowing()
+  }
+
+  @Test
   fun run_echoTool_returnsTheArgumentVerbatim(): Unit = runBlocking {
     contract.run_echoTool_returnsTheArgumentVerbatim()
   }

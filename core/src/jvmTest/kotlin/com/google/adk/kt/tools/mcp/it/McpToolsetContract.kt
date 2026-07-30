@@ -84,6 +84,46 @@ class McpToolsetContract(private val harness: McpToolsetHarness) {
       assertThat(entry.name).isEqualTo(FakeMcpServer.RESOURCE_GREETING_NAME)
     }
 
+  suspend fun run_loadMcpResource_byName_readsTheResourceOverTheWire() =
+    harness.withToolset(useMcpResources = true) { toolset ->
+      // The point of the name-based tool, against a real server: name and uri genuinely differ
+      // here ("greeting" vs "mem://greeting"), so this exercises the resources/list round-trip
+      // rather than a uri passed straight through.
+      val load = toolset.getTools().single { it.name == LOAD_MCP_RESOURCE }
+      val result =
+        load.run(testToolContext(), mapOf("name" to FakeMcpServer.RESOURCE_GREETING_NAME))
+      assertThat(result.toString()).contains(INJECTED_TOKEN)
+    }
+
+  suspend fun run_loadMcpResource_byUri_readsTheResourceOverTheWire() =
+    harness.withToolset(useMcpResources = true) { toolset ->
+      // The uri path skips resolution entirely, which is what keeps resources reachable that the
+      // server never lists (a template expansion, a resource link).
+      val load = toolset.getTools().single { it.name == LOAD_MCP_RESOURCE }
+      val result = load.run(testToolContext(), mapOf("uri" to FakeMcpServer.RESOURCE_GREETING_URI))
+      assertThat(result.toString()).contains(INJECTED_TOKEN)
+    }
+
+  suspend fun run_loadMcpResource_unknownName_returnsMessageInsteadOfThrowing() =
+    harness.withToolset(useMcpResources = true) { toolset ->
+      // A caller mistake must come back as text the model can act on; throwing would abort the
+      // agent turn without the model ever learning why.
+      val load = toolset.getTools().single { it.name == LOAD_MCP_RESOURCE }
+      val result = load.run(testToolContext(), mapOf("name" to "no-such-resource"))
+      assertThat(result.toString()).contains("no-such-resource")
+      assertThat(result.toString()).contains("list_mcp_resources")
+    }
+
+  suspend fun run_loadMcpResource_byUnknownUri_returnsMessageInsteadOfThrowing() =
+    harness.withToolset(useMcpResources = true) { toolset ->
+      // The real server answers an unknown uri with RESOURCE_NOT_FOUND, and the tool turns that
+      // into text the model can act on rather than aborting the turn.
+      val load = toolset.getTools().single { it.name == LOAD_MCP_RESOURCE }
+      val result = load.run(testToolContext(), mapOf("uri" to "mem://doc"))
+      assertThat(result.toString()).contains("mem://doc")
+      assertThat(result.toString()).contains("list_mcp_resources")
+    }
+
   suspend fun run_echoTool_returnsTheArgumentVerbatim() =
     harness.withToolset(useMcpResources = false) { toolset ->
       val message = "round-trip payload"
@@ -147,8 +187,10 @@ class McpToolsetContract(private val harness: McpToolsetHarness) {
         FakeMcpServer.TOOL_GET_RECORD,
       )
 
+    private const val LOAD_MCP_RESOURCE = "load_mcp_resource"
+
     /** The synthetic tools `McpToolset` appends when `useMcpResources` is enabled. */
     private val RESOURCE_TOOLS =
-      arrayOf("list_mcp_resources", "load_mcp_resource", "list_mcp_resource_templates")
+      arrayOf("list_mcp_resources", LOAD_MCP_RESOURCE, "list_mcp_resource_templates")
   }
 }

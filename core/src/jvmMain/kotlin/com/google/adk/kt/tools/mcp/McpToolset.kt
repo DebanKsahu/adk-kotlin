@@ -24,6 +24,7 @@ import com.google.adk.kt.tools.Toolset
 import com.google.adk.kt.tools.isToolSelected
 import com.google.adk.kt.tools.mcp.McpToolException.McpToolLoadingException
 import io.modelcontextprotocol.client.McpAsyncClient
+import io.modelcontextprotocol.spec.McpError
 import io.modelcontextprotocol.spec.McpSchema
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
@@ -162,6 +163,40 @@ internal constructor(
   }
 
   /**
+   * Fetches every resource advertised by the MCP server, following pagination cursors until the
+   * server reports no further pages.
+   *
+   * This is the full-scan counterpart to the paged [listResources]: MCP keys resources by `uri`, so
+   * resolving a [McpResourceInfo.name] means scanning the catalog, and names are not required to be
+   * unique. It costs one round trip per page of the whole catalog.
+   *
+   * Kept `internal` like the rest of the resource surface for 1.0. Promoting any of it to `public`
+   * later is purely additive.
+   */
+  internal suspend fun listAllResources(
+    readonlyContext: ReadonlyContext? = null
+  ): List<McpResourceInfo> {
+    // Paged here rather than through the SDK's no-arg overload, which chains pages with expand()
+    // under no page cap, no cycle detection and no aggregate deadline: a server returning a
+    // constant nextCursor would loop until the process died, and that is reachable from a
+    // model-chosen load_mcp_resource call. The cap converts that into a bounded, loud failure.
+    val all = mutableListOf<McpResourceInfo>()
+    var cursor: String? = null
+    repeat(MAX_FULL_SCAN_PAGES) {
+      val result =
+        withSession(readonlyContext) { session -> session.listResources(cursor).awaitSingle() }
+      all += result.resources().map { it.toResourceInfo() }
+      cursor = result.nextCursor() ?: return all
+    }
+    // Truncating instead would silently corrupt name resolution: a missing page reads as
+    // "no such resource", or hides a collision that should have been reported as ambiguous.
+    throw McpToolException.McpToolExecutionException(
+      "MCP server kept paginating resources/list past $MAX_FULL_SCAN_PAGES pages; giving up " +
+        "rather than scanning forever."
+    )
+  }
+
+  /**
    * Lists a page of resource templates advertised by the MCP server.
    *
    * @param cursor An opaque pagination cursor from a previous
@@ -232,6 +267,14 @@ internal constructor(
         throw e
       } catch (e: IllegalArgumentException) {
         throw e
+      } catch (e: McpError) {
+        // Same reasoning: a resource the server does not have is a rejected request, not a dead
+        // session, so retrying repeats it and evicting punishes everyone sharing the session.
+        if (e.jsonRpcError?.code() == McpSchema.ErrorCodes.RESOURCE_NOT_FOUND) throw e
+        if (attempt == DEFAULT_RETRY_TIMES) throw e
+        stale = session
+        logger.warn(e) { "Retrying MCP resource call, attempt $attempt: ${e.message}" }
+        delay(DEFAULT_RETRY_DELAY_MS)
       } catch (e: Exception) {
         if (attempt == DEFAULT_RETRY_TIMES) {
           throw e
@@ -263,6 +306,9 @@ internal constructor(
   }
 
   companion object {
+    /** Bound on [listAllResources]; ample for a real catalog, fatal only for a looping server. */
+    private const val MAX_FULL_SCAN_PAGES = 100
+
     private const val DEFAULT_RETRY_TIMES = 3
     private const val DEFAULT_RETRY_DELAY_MS = 100L
     private const val DEFAULT_MAX_RESOURCE_LENGTH = 10000
