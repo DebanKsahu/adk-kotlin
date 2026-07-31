@@ -20,7 +20,6 @@ import com.google.adk.kt.types.CitationMetadata
 import com.google.adk.kt.types.Content
 import com.google.adk.kt.types.FinishReason
 import com.google.adk.kt.types.FunctionCall
-import com.google.adk.kt.types.GenerateContentResponse
 import com.google.adk.kt.types.GroundingMetadata
 import com.google.adk.kt.types.Part
 import com.google.adk.kt.types.PartialArg
@@ -32,8 +31,8 @@ import kotlinx.coroutines.sync.withLock
 /**
  * Aggregates partial streaming responses into a single, cohesive response.
  *
- * This class processes a stream of [GenerateContentResponse] objects, handling partial text and
- * function call arguments by buffering and merging them into complete [Part]s as they arrive.
+ * This class processes a stream of [LlmResponse] objects, handling partial text and function call
+ * arguments by buffering and merging them into complete [Part]s as they arrive.
  *
  * The [processResponse] method should be called for each response in the stream. After all
  * responses have been processed, the [aggregate] method should be called to retrieve the final
@@ -41,11 +40,12 @@ import kotlinx.coroutines.sync.withLock
  */
 internal class StreamingResponseAggregator {
   private val mutex = Mutex()
-  private var response: GenerateContentResponse? = null
+  private var lastResponse: LlmResponse? = null
   private var usageMetadata: UsageMetadata? = null
   private var groundingMetadata: GroundingMetadata? = null
   private var citationMetadata: CitationMetadata? = null
   private var finishReason: FinishReason? = null
+  private var errorMessage: String? = null
 
   private val partsSequence = mutableListOf<Part>()
   private val currentTextBuffer = StringBuilder()
@@ -68,18 +68,18 @@ internal class StreamingResponseAggregator {
    * @param response The response chunk to process.
    * @return The [LlmResponse] corresponding to the current chunk, marked as partial.
    */
-  suspend fun processResponse(response: GenerateContentResponse): LlmResponse = mutex.withLock {
-    this.response = response
-    val llmResponse = LlmResponse.from(response)
+  suspend fun processResponse(response: LlmResponse): LlmResponse = mutex.withLock {
+    this.lastResponse = response
 
-    llmResponse.usageMetadata?.let { usageMetadata = it }
-    llmResponse.groundingMetadata?.let { groundingMetadata = it }
-    llmResponse.citationMetadata?.let { citationMetadata = it }
-    llmResponse.finishReason?.let { finishReason = it }
+    response.usageMetadata?.let { usageMetadata = it }
+    response.groundingMetadata?.let { groundingMetadata = it }
+    response.citationMetadata?.let { citationMetadata = it }
+    response.finishReason?.let { finishReason = it }
+    response.errorMessage?.let { errorMessage = it }
 
     // Assign a client id to any function call missing one up front, so the partial chunk and the
     // final response share it.
-    val parts = (llmResponse.content?.parts ?: emptyList()).map { it.ensureFunctionCallId() }
+    val parts = (response.content?.parts ?: emptyList()).map { it.ensureFunctionCallId() }
     for (part in parts) {
       when {
         part.text != null -> processTextPart(part)
@@ -93,7 +93,7 @@ internal class StreamingResponseAggregator {
     }
 
     // In Progressive SSE mode, all intermediate chunks are partial (with any generated ids).
-    llmResponse.copy(content = llmResponse.content?.copy(parts = parts), partial = true)
+    response.copy(content = response.content?.copy(parts = parts), partial = true)
   }
 
   /**
@@ -104,33 +104,46 @@ internal class StreamingResponseAggregator {
    * list, and then constructs a single [LlmResponse] containing all aggregated parts and metadata,
    * with `partial` set to `false`.
    *
-   * @return The final aggregated [LlmResponse], or null if no responses were processed.
+   * A turn with no content still yields a response if the model reported a failure (a non-`STOP`
+   * finish reason or an error message), rather than ending the stream in silence.
+   *
+   * @return The final aggregated [LlmResponse], or null if there is nothing to report.
    */
   suspend fun aggregate(): LlmResponse? = mutex.withLock {
-    val currentResponse = response ?: return@withLock null
-    val candidate = currentResponse.candidates.firstOrNull() ?: return@withLock null
+    val last = lastResponse ?: return@withLock null
 
     flushTextBufferToSequence()
     flushFunctionCallToSequence()
 
-    if (partsSequence.isEmpty()) return@withLock null
-
-    // Attach a trailing thought signature from the final chunk to the last aggregated part.
-    candidate.content.parts.firstOrNull()?.thoughtSignature?.let { signature ->
-      partsSequence[partsSequence.lastIndex] =
-        partsSequence[partsSequence.lastIndex].copy(thoughtSignature = signature)
+    if (partsSequence.isNotEmpty()) {
+      // Attach a trailing thought signature from the final chunk to the last aggregated part.
+      last.content?.parts?.firstOrNull()?.thoughtSignature?.let { signature ->
+        partsSequence[partsSequence.lastIndex] =
+          partsSequence[partsSequence.lastIndex].copy(thoughtSignature = signature)
+      }
     }
 
-    val finalFinishReason = finishReason ?: candidate.finishReason
+    val finalErrorCode = finishReason?.takeIf { it != FinishReason.STOP }?.name
+    val finalErrorMessage = errorMessage?.takeIf { finishReason != FinishReason.STOP }
+    val finalContent =
+      if (partsSequence.isEmpty()) {
+        null
+      } else {
+        Content(role = Role.MODEL, parts = partsSequence.toList())
+      }
+
+    if (finalContent == null && finalErrorCode == null && finalErrorMessage == null) {
+      return@withLock null
+    }
 
     LlmResponse(
-      content = Content(role = Role.MODEL, parts = partsSequence.toList()),
+      content = finalContent,
       usageMetadata = usageMetadata,
-      finishReason = finalFinishReason,
-      errorCode = finalFinishReason?.takeIf { it != FinishReason.STOP }?.name,
-      errorMessage = if (finalFinishReason == FinishReason.STOP) null else candidate.finishMessage,
+      finishReason = finishReason,
+      errorCode = finalErrorCode,
+      errorMessage = finalErrorMessage,
       partial = false,
-      modelVersion = currentResponse.modelVersion,
+      modelVersion = last.modelVersion,
       citationMetadata = citationMetadata,
       groundingMetadata = groundingMetadata,
     )

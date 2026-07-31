@@ -156,7 +156,7 @@ class Gemini(
           "LLM Streaming Response chunk: ${response.candidates?.size ?: 0} candidates, " +
             "finishReason=${response.candidates?.firstOrNull()?.finishReason}"
         }
-        emit(aggregator.processResponse(response.fromGenaiSdk()))
+        emit(aggregator.processResponse(LlmResponse.from(response.fromGenaiSdk())))
       }
 
       // After stream loop ends, emit final aggregated response with any cache metadata attached

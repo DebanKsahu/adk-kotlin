@@ -16,11 +16,9 @@
 
 package com.google.adk.kt.models
 
-import com.google.adk.kt.types.Candidate
 import com.google.adk.kt.types.Content
 import com.google.adk.kt.types.FinishReason
 import com.google.adk.kt.types.FunctionCall
-import com.google.adk.kt.types.GenerateContentResponse
 import com.google.adk.kt.types.Part
 import com.google.adk.kt.types.PartialArg
 import com.google.adk.kt.types.PartialArgValue
@@ -312,16 +310,10 @@ class StreamingResponseAggregatorTest {
 
     val unused =
       aggregator.processResponse(
-        GenerateContentResponse(
-          candidates =
-            listOf(
-              Candidate(
-                content =
-                  Content(
-                    parts =
-                      listOf(Part(text = "Calling"), Part(functionCall = FunctionCall(name = "do")))
-                  )
-              )
+        LlmResponse(
+          content =
+            Content(
+              parts = listOf(Part(text = "Calling"), Part(functionCall = FunctionCall(name = "do")))
             )
         )
       )
@@ -365,32 +357,24 @@ class StreamingResponseAggregatorTest {
     val signature = byteArrayOf(9, 8, 7)
 
     val chunk1 =
-      GenerateContentResponse(
-        candidates =
-          listOf(
-            Candidate(
-              content =
-                Content(
-                  parts =
-                    listOf(
-                      Part(
-                        functionCall =
-                          FunctionCall(
-                            name = "search",
-                            partialArgs =
-                              listOf(
-                                PartialArg(
-                                  jsonPath = "$.q",
-                                  value = PartialArgValue.StringValue("hel"),
-                                )
-                              ),
-                            willContinue = true,
-                          ),
-                        thoughtSignature = signature,
-                      )
-                    )
+      LlmResponse(
+        content =
+          Content(
+            parts =
+              listOf(
+                Part(
+                  functionCall =
+                    FunctionCall(
+                      name = "search",
+                      partialArgs =
+                        listOf(
+                          PartialArg(jsonPath = "$.q", value = PartialArgValue.StringValue("hel"))
+                        ),
+                      willContinue = true,
+                    ),
+                  thoughtSignature = signature,
                 )
-            )
+              )
           )
       )
     val unused1 = aggregator.processResponse(chunk1)
@@ -414,14 +398,8 @@ class StreamingResponseAggregatorTest {
 
     val unused =
       aggregator.processResponse(
-        GenerateContentResponse(
-          candidates =
-            listOf(
-              Candidate(
-                content =
-                  Content(parts = listOf(Part(text = "Answer", thoughtSignature = signature)))
-              )
-            )
+        LlmResponse(
+          content = Content(parts = listOf(Part(text = "Answer", thoughtSignature = signature)))
         )
       )
     val finalResp = aggregator.aggregate()
@@ -438,14 +416,9 @@ class StreamingResponseAggregatorTest {
 
     val unused =
       aggregator.processResponse(
-        GenerateContentResponse(
-          candidates =
-            listOf(
-              Candidate(
-                content = Content(parts = listOf(Part(text = "Done"))),
-                finishReason = FinishReason.STOP,
-              )
-            ),
+        LlmResponse(
+          content = Content(parts = listOf(Part(text = "Done"))),
+          finishReason = FinishReason.STOP,
           usageMetadata = UsageMetadata(totalTokenCount = 42),
         )
       )
@@ -462,14 +435,9 @@ class StreamingResponseAggregatorTest {
 
     val unused =
       aggregator.processResponse(
-        GenerateContentResponse(
-          candidates =
-            listOf(
-              Candidate(
-                content = Content(parts = listOf(Part(text = "Partial"))),
-                finishReason = FinishReason.MAX_TOKENS,
-              )
-            )
+        LlmResponse(
+          content = Content(parts = listOf(Part(text = "Partial"))),
+          finishReason = FinishReason.MAX_TOKENS,
         )
       )
     val finalResp = aggregator.aggregate()
@@ -478,17 +446,144 @@ class StreamingResponseAggregatorTest {
     assertEquals("MAX_TOKENS", finalResp?.errorCode)
   }
 
-  private fun createResp(text: String, thought: Boolean? = null): GenerateContentResponse {
-    return GenerateContentResponse(
-      candidates =
-        listOf(Candidate(content = Content(parts = listOf(Part(text = text, thought = thought)))))
-    )
+  // Defensive: if a trailing chunk ever carries only metadata (no content), the aggregator must
+  // not discard the content accumulated from the chunks before it.
+  @Test
+  fun trailingChunkWithoutContent_keepsAggregatedText() = runBlocking {
+    val aggregator = StreamingResponseAggregator()
+
+    val unused1 = aggregator.processResponse(createResp("Hello "))
+    val unused2 = aggregator.processResponse(createResp("world!"))
+    val unused3 =
+      aggregator.processResponse(LlmResponse(usageMetadata = UsageMetadata(totalTokenCount = 7)))
+    val finalResp = aggregator.aggregate()
+
+    assertNotNull(finalResp)
+    assertEquals(1, finalResp.content?.parts?.size)
+    assertEquals("Hello world!", finalResp.content?.parts?.get(0)?.text)
+    assertEquals(7, finalResp.usageMetadata?.totalTokenCount)
   }
 
-  private fun createFcResp(fc: FunctionCall): GenerateContentResponse {
-    return GenerateContentResponse(
-      candidates = listOf(Candidate(content = Content(parts = listOf(Part(functionCall = fc)))))
-    )
+  // A blocked prompt yields no content at all. The turn must still end with a non-partial response
+  // carrying the error, otherwise the caller is left waiting on a stream that never concludes.
+  @Test
+  fun errorWithoutContent_stillProducesFinalResponse() = runBlocking {
+    val aggregator = StreamingResponseAggregator()
+
+    val unused =
+      aggregator.processResponse(
+        LlmResponse(finishReason = FinishReason.SAFETY, errorMessage = "Blocked for safety.")
+      )
+    val finalResp = aggregator.aggregate()
+
+    assertNotNull(finalResp)
+    assertEquals(null, finalResp.content)
+    assertEquals(false, finalResp.partial)
+    assertEquals(FinishReason.SAFETY, finalResp.finishReason)
+    assertEquals("SAFETY", finalResp.errorCode)
+    assertEquals("Blocked for safety.", finalResp.errorMessage)
+  }
+
+  // The shape a thinking model produces when it exhausts maxOutputTokens before emitting any text:
+  // a candidate carrying content but no parts. The turn must still conclude.
+  @Test
+  fun emptyPartsWithFinishReason_stillProducesFinalResponse() = runBlocking {
+    val aggregator = StreamingResponseAggregator()
+
+    val unused =
+      aggregator.processResponse(
+        LlmResponse(
+          content = Content(parts = emptyList()),
+          finishReason = FinishReason.MAX_TOKENS,
+          errorMessage = "Unknown error.",
+        )
+      )
+    val finalResp = aggregator.aggregate()
+
+    assertNotNull(finalResp)
+    assertEquals(null, finalResp.content)
+    assertEquals(false, finalResp.partial)
+    assertEquals(FinishReason.MAX_TOKENS, finalResp.finishReason)
+    assertEquals("MAX_TOKENS", finalResp.errorCode)
+    assertEquals("Unknown error.", finalResp.errorMessage)
+  }
+
+  // A terminal chunk carrying a non-STOP finishReason and errorMessage alongside content: the final
+  // response keeps the merged content and surfaces the error code and message.
+  @Test
+  fun contentThenFinalChunkWithError_carriesContentAndError() = runBlocking {
+    val aggregator = StreamingResponseAggregator()
+
+    val unused1 = aggregator.processResponse(createResp("Partial "))
+    val unused2 =
+      aggregator.processResponse(
+        LlmResponse(
+          content = Content(parts = listOf(Part(text = "answer"))),
+          finishReason = FinishReason.MAX_TOKENS,
+          errorMessage = "Unknown error.",
+        )
+      )
+    val finalResp = aggregator.aggregate()
+
+    assertNotNull(finalResp)
+    assertEquals("Partial answer", finalResp.content?.parts?.get(0)?.text)
+    assertEquals(FinishReason.MAX_TOKENS, finalResp.finishReason)
+    assertEquals("MAX_TOKENS", finalResp.errorCode)
+    assertEquals("Unknown error.", finalResp.errorMessage)
+  }
+
+  // A chunk carrying an errorMessage but no finishReason: the final response keeps the earlier
+  // content and surfaces the errorMessage with no errorCode.
+  @Test
+  fun errorMessageWithoutFinishReason_reachesFinalResponse() = runBlocking {
+    val aggregator = StreamingResponseAggregator()
+
+    val unused1 = aggregator.processResponse(createResp("Partial "))
+    val unused2 = aggregator.processResponse(createResp("answer"))
+    val unused3 = aggregator.processResponse(LlmResponse(errorMessage = "Generation failed."))
+    val finalResp = aggregator.aggregate()
+
+    assertNotNull(finalResp)
+    assertEquals("Partial answer", finalResp.content?.parts?.get(0)?.text)
+    assertEquals(null, finalResp.finishReason)
+    assertEquals(null, finalResp.errorCode)
+    assertEquals("Generation failed.", finalResp.errorMessage)
+  }
+
+  // Nothing to report: no content and no error means no final response.
+  @Test
+  fun contentFreeStreamWithoutError_producesNoFinalResponse() = runBlocking {
+    val aggregator = StreamingResponseAggregator()
+
+    val unused =
+      aggregator.processResponse(LlmResponse(usageMetadata = UsageMetadata(totalTokenCount = 3)))
+
+    assertEquals(null, aggregator.aggregate())
+  }
+
+  // A non-STOP finish with no content and no error message still concludes: the finish reason
+  // alone is surfaced as an error code, so the turn does not end in silence.
+  @Test
+  fun errorCodeOnlyWithoutContent_stillProducesFinalResponse() = runBlocking {
+    val aggregator = StreamingResponseAggregator()
+
+    val unused = aggregator.processResponse(LlmResponse(finishReason = FinishReason.OTHER))
+    val finalResp = aggregator.aggregate()
+
+    assertNotNull(finalResp)
+    assertEquals(null, finalResp.content)
+    assertEquals(false, finalResp.partial)
+    assertEquals(FinishReason.OTHER, finalResp.finishReason)
+    assertEquals("OTHER", finalResp.errorCode)
+    assertEquals(null, finalResp.errorMessage)
+  }
+
+  private fun createResp(text: String, thought: Boolean? = null): LlmResponse {
+    return LlmResponse(content = Content(parts = listOf(Part(text = text, thought = thought))))
+  }
+
+  private fun createFcResp(fc: FunctionCall): LlmResponse {
+    return LlmResponse(content = Content(parts = listOf(Part(functionCall = fc))))
   }
 
   private fun createPartialFc(
