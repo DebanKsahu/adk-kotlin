@@ -87,6 +87,16 @@ class McpToolsetIntegrationTest {
   }
 
   @Test
+  fun listTemplates_expand_thenLoadByUri_readsTheResource(): Unit = runBlocking {
+    contract.run_listTemplates_expand_thenLoadByUri_readsTheResource()
+  }
+
+  @Test
+  fun listResources_doesNotEnumerateTemplateMembers(): Unit = runBlocking {
+    contract.listResources_doesNotEnumerateTemplateMembers()
+  }
+
+  @Test
   fun loadMcpResource_byName_readsTheResourceOverTheWire(): Unit = runBlocking {
     contract.run_loadMcpResource_byName_readsTheResourceOverTheWire()
   }

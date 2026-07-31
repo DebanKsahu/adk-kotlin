@@ -21,6 +21,7 @@ package com.google.adk.kt.tools.mcp.it
 import io.modelcontextprotocol.json.McpJsonDefaults
 import io.modelcontextprotocol.server.McpServer
 import io.modelcontextprotocol.server.McpServerFeatures.SyncResourceSpecification
+import io.modelcontextprotocol.server.McpServerFeatures.SyncResourceTemplateSpecification
 import io.modelcontextprotocol.server.McpServerFeatures.SyncToolSpecification
 import io.modelcontextprotocol.server.McpSyncServer
 import io.modelcontextprotocol.server.McpSyncServerExchange
@@ -84,6 +85,14 @@ object FakeMcpServer {
 
   // Resource URIs
   const val RESOURCE_GREETING_URI = "mem://greeting"
+
+  /** An RFC 6570 template whose members never appear in `resources/list`. */
+  const val RESOURCE_DOC_TEMPLATE = "mem://doc/{slug}"
+
+  const val RESOURCE_DOC_TEMPLATE_NAME = "doc"
+
+  /** The body served for a `mem://doc/{slug}` member once [slug] is substituted. */
+  fun docContent(slug: String): String = "document body for $slug"
 
   /** The name (distinct from [RESOURCE_GREETING_URI]) the greeting resource is advertised under. */
   const val RESOURCE_GREETING_NAME = "greeting"
@@ -159,6 +168,7 @@ fun buildFakeMcpServer(spec: McpServer.SyncSpecification<*>, token: String): Mcp
     )
     .tools(toolSpecifications(token))
     .resources(resourceSpecifications(token))
+    .resourceTemplates(resourceTemplateSpecifications())
     .build()
 
 // Tools
@@ -327,6 +337,30 @@ private fun getRecordTool(): SyncToolSpecification =
 
 private fun resourceSpecifications(token: String): List<SyncResourceSpecification> =
   listOf(greetingResource(token))
+
+private fun resourceTemplateSpecifications(): List<SyncResourceTemplateSpecification> =
+  listOf(docTemplate())
+
+/**
+ * `mem://doc/{slug}`: a family that cannot be enumerated, which is what templates are for.
+ *
+ * It deliberately never appears in `resources/list`, so the only way to reach a member is to list
+ * the templates, substitute `{slug}`, and read the resulting uri. The SDK server matches an
+ * expanded uri back to this spec (`McpAsyncServer.resourcesReadRequestHandler`).
+ */
+private fun docTemplate(): SyncResourceTemplateSpecification {
+  val template =
+    McpSchema.ResourceTemplate.builder()
+      .uriTemplate(FakeMcpServer.RESOURCE_DOC_TEMPLATE)
+      .name(FakeMcpServer.RESOURCE_DOC_TEMPLATE_NAME)
+      .description("A document addressed by slug; the family is not enumerable.")
+      .mimeType("text/plain")
+      .build()
+  return SyncResourceTemplateSpecification(template) { _, request ->
+    val slug = request.uri().substringAfterLast('/')
+    textResource(request.uri(), FakeMcpServer.docContent(slug))
+  }
+}
 
 /** `mem://greeting`: a short text resource that embeds the injected [token]. */
 private fun greetingResource(token: String): SyncResourceSpecification {

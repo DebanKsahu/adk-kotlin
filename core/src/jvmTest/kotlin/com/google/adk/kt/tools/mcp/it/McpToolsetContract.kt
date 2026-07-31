@@ -124,6 +124,38 @@ class McpToolsetContract(private val harness: McpToolsetHarness) {
       assertThat(result.toString()).contains("list_mcp_resources")
     }
 
+  suspend fun run_listTemplates_expand_thenLoadByUri_readsTheResource() =
+    harness.withToolset(useMcpResources = true) { toolset ->
+      // The full template loop against a real server: list the templates, substitute {slug}
+      // client-side as the MCP spec intends, then read the expanded uri through
+      // load_mcp_resource's `uri` argument. mem://doc/{slug} is deliberately absent from
+      // resources/list, so name-based lookup cannot reach it and this is the only path.
+      val tools = toolset.getTools()
+      val listTemplates = tools.single { it.name == "list_mcp_resource_templates" }
+      val load = tools.single { it.name == LOAD_MCP_RESOURCE }
+
+      val listed = listTemplates.run(testToolContext(), emptyMap()) as Map<*, *>
+      val templates = listed["resourceTemplates"] as List<*>
+      val uriTemplate =
+        templates
+          .map { it as Map<*, *> }
+          .single { it["name"] == FakeMcpServer.RESOURCE_DOC_TEMPLATE_NAME }["uriTemplate"]
+      assertThat(uriTemplate).isEqualTo(FakeMcpServer.RESOURCE_DOC_TEMPLATE)
+
+      val expanded = (uriTemplate as String).replace("{slug}", "onboarding")
+      val body = load.run(testToolContext(), mapOf("uri" to expanded))
+
+      assertThat(body.toString()).isEqualTo(FakeMcpServer.docContent("onboarding"))
+    }
+
+  suspend fun listResources_doesNotEnumerateTemplateMembers() =
+    harness.withToolset(useMcpResources = false) { toolset ->
+      // Why the template tool is not redundant: its members are not in the listing.
+      val uris = toolset.listResources().resources.map { it.uri }
+      assertThat(uris).doesNotContain("mem://doc/onboarding")
+      assertThat(uris).contains(FakeMcpServer.RESOURCE_GREETING_URI)
+    }
+
   suspend fun run_echoTool_returnsTheArgumentVerbatim() =
     harness.withToolset(useMcpResources = false) { toolset ->
       val message = "round-trip payload"

@@ -23,16 +23,47 @@ import io.modelcontextprotocol.spec.McpSchema
 import kotlin.test.Test
 import kotlinx.coroutines.reactor.mono
 import kotlinx.coroutines.test.runTest
+import org.mockito.kotlin.any
+import org.mockito.kotlin.anyOrNull
 import org.mockito.kotlin.doReturn
+import org.mockito.kotlin.isNull
 import org.mockito.kotlin.mock
+import org.mockito.kotlin.times
+import org.mockito.kotlin.verifyBlocking
 import org.mockito.kotlin.whenever
 
 class ListMcpResourceTemplatesToolTest {
 
+  private fun createMcpToolset(mockMcpSession: McpAsyncClient): McpToolset {
+    // The toolset fetches the pooled session from the manager; hand it the mock session.
+    val mockSessionManager =
+      mock<SessionManager> { onBlocking { getSession(any(), anyOrNull()) } doReturn mockMcpSession }
+    return McpToolset(mockSessionManager)
+  }
+
+  @Test
+  fun run_reResolvesTheSessionOnEveryCall() = runTest {
+    val mockMcpSession = mock<McpAsyncClient>()
+    val mockSessionManager =
+      mock<SessionManager> { onBlocking { getSession(any(), anyOrNull()) } doReturn mockMcpSession }
+    val tool = ListMcpResourceTemplatesTool(McpToolset(mockSessionManager))
+
+    whenever(mockMcpSession.listResourceTemplates(isNull())) doReturn
+      mono { McpSchema.ListResourceTemplatesResult(emptyList(), null) }
+
+    val context = testToolContext()
+    val unusedFirst = tool.run(context, emptyMap())
+    val unusedSecond = tool.run(context, emptyMap())
+
+    // Capturing a client at load time would keep calling a dead one after the manager replaced
+    // it, so template discovery must go back to the manager on each call.
+    verifyBlocking(mockSessionManager, times(2)) { getSession(any(), anyOrNull()) }
+  }
+
   @Test
   fun run_withNoCursor_returnsTemplates() = runTest {
     val mockMcpSession = mock<McpAsyncClient>()
-    val tool = ListMcpResourceTemplatesTool(mockMcpSession)
+    val tool = ListMcpResourceTemplatesTool(createMcpToolset(mockMcpSession))
 
     val templateList =
       listOf(
@@ -45,7 +76,7 @@ class ListMcpResourceTemplatesToolTest {
         McpSchema.ResourceTemplate.builder().name("tpl2").uriTemplate("uri2/{id}").build(),
       )
     val listTemplatesResult = McpSchema.ListResourceTemplatesResult(templateList, "cursor123")
-    whenever(mockMcpSession.listResourceTemplates()) doReturn mono { listTemplatesResult }
+    whenever(mockMcpSession.listResourceTemplates(isNull())) doReturn mono { listTemplatesResult }
 
     val context = testToolContext()
 
@@ -74,7 +105,7 @@ class ListMcpResourceTemplatesToolTest {
   @Test
   fun run_withCursor_queriesWithCursor() = runTest {
     val mockMcpSession = mock<McpAsyncClient>()
-    val tool = ListMcpResourceTemplatesTool(mockMcpSession)
+    val tool = ListMcpResourceTemplatesTool(createMcpToolset(mockMcpSession))
 
     val templateList = emptyList<McpSchema.ResourceTemplate>()
     val listTemplatesResult = McpSchema.ListResourceTemplatesResult(templateList, null)
@@ -94,7 +125,7 @@ class ListMcpResourceTemplatesToolTest {
   @Test
   fun run_withCursor_returnsNextCursor() = runTest {
     val mockMcpSession = mock<McpAsyncClient>()
-    val tool = ListMcpResourceTemplatesTool(mockMcpSession)
+    val tool = ListMcpResourceTemplatesTool(createMcpToolset(mockMcpSession))
 
     val templateList = emptyList<McpSchema.ResourceTemplate>()
     val listTemplatesResult = McpSchema.ListResourceTemplatesResult(templateList, "next-cursor")
@@ -116,9 +147,9 @@ class ListMcpResourceTemplatesToolTest {
   @Test
   fun run_throwsMcpToolExecutionExceptionOnFailure() = runTest {
     val mockMcpSession = mock<McpAsyncClient>()
-    val tool = ListMcpResourceTemplatesTool(mockMcpSession)
+    val tool = ListMcpResourceTemplatesTool(createMcpToolset(mockMcpSession))
 
-    whenever(mockMcpSession.listResourceTemplates()) doReturn
+    whenever(mockMcpSession.listResourceTemplates(isNull())) doReturn
       mono { throw RuntimeException("Server error") }
 
     val context = testToolContext()
@@ -133,14 +164,19 @@ class ListMcpResourceTemplatesToolTest {
   @Test
   fun declaration_returnsCorrectSchema() {
     val mockMcpSession = mock<McpAsyncClient>()
-    val tool = ListMcpResourceTemplatesTool(mockMcpSession)
+    val tool = ListMcpResourceTemplatesTool(createMcpToolset(mockMcpSession))
 
     val declaration = tool.declaration()
 
     assertThat(declaration).isNotNull()
     assertThat(declaration.name).isEqualTo("list_mcp_resource_templates")
     assertThat(declaration.description)
-      .isEqualTo("List resource templates available on the MCP server.")
+      .startsWith("List resource templates available on the MCP server.")
+    // The description must close the loop for the model: a listing it cannot act on is what made
+    // this tool look inert. It has to say expand the uriTemplate, then read it by uri.
+    assertThat(declaration.description).contains("uriTemplate")
+    assertThat(declaration.description).contains("load_mcp_resource")
+    assertThat(declaration.description).contains("'uri'")
 
     val properties = declaration.parameters?.properties
     assertThat(properties?.containsKey("cursor")).isTrue()

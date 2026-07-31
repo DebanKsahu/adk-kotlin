@@ -131,9 +131,7 @@ internal constructor(
     if (useMcpResources && capabilities?.resources() != null) {
       tools.add(ListMcpResourcesTool(this))
       tools.add(LoadMcpResourceTool(this, maxMcpResourceLength))
-      // Still on the raw session: this tool is scheduled for removal in 1.0, so it is not worth
-      // rewiring through the toolset.
-      tools.add(ListMcpResourceTemplatesTool(session))
+      tools.add(ListMcpResourceTemplatesTool(this))
     }
     return tools
   }

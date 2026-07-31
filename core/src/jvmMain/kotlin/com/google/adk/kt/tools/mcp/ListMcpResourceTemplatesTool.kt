@@ -16,47 +16,44 @@
 
 package com.google.adk.kt.tools.mcp
 
+import com.google.adk.kt.agents.toReadonlyContext
 import com.google.adk.kt.tools.BaseTool
 import com.google.adk.kt.tools.ToolContext
 import com.google.adk.kt.tools.mcp.McpToolException.McpToolExecutionException
 import com.google.adk.kt.types.FunctionDeclaration
 import com.google.adk.kt.types.Schema
 import com.google.adk.kt.types.Type
-import io.modelcontextprotocol.client.McpAsyncClient
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.reactor.awaitSingle
 
 /**
  * A built-in tool that allows the ADK agents to list resource templates exposed by the MCP server.
  */
-internal class ListMcpResourceTemplatesTool(private val mcpSession: McpAsyncClient) :
-  BaseTool("list_mcp_resource_templates", "List resource templates available on the MCP server.") {
+internal class ListMcpResourceTemplatesTool(private val mcpToolset: McpToolset) :
+  BaseTool("list_mcp_resource_templates", DESCRIPTION) {
 
   override suspend fun run(context: ToolContext, args: Map<String, Any>): Any {
     try {
       val cursor = args["cursor"] as? String
 
-      val result =
-        if (cursor != null) {
-            mcpSession.listResourceTemplates(cursor)
-          } else {
-            mcpSession.listResourceTemplates()
-          }
-          .awaitSingle()
+      // Through the toolset, so the session is re-resolved per call. Capturing a client at load
+      // time would keep calling a dead one after the SessionManager replaced it, leaving template
+      // discovery broken across a reconnect while the other two tools recovered.
+      val listing =
+        mcpToolset.listResourceTemplates(cursor, context.invocationContext.toReadonlyContext())
 
       val templates =
-        result.resourceTemplates().map { template ->
+        listing.resourceTemplates.map { template ->
           buildMap {
-            put(TEMPLATE_NAME, template.name())
-            put(TEMPLATE_URI_TEMPLATE, template.uriTemplate())
-            template.description()?.let { description -> put(TEMPLATE_DESCRIPTION, description) }
-            template.mimeType()?.let { mimeType -> put(TEMPLATE_MIME_TYPE, mimeType) }
+            put(TEMPLATE_NAME, template.name)
+            put(TEMPLATE_URI_TEMPLATE, template.uriTemplate)
+            template.description?.let { description -> put(TEMPLATE_DESCRIPTION, description) }
+            template.mimeType?.let { mimeType -> put(TEMPLATE_MIME_TYPE, mimeType) }
           }
         }
 
       return buildMap<String, Any> {
         put("resourceTemplates", templates)
-        result.nextCursor()?.let { put("nextCursor", it) }
+        listing.nextCursor?.let { put("nextCursor", it) }
       }
     } catch (e: CancellationException) {
       throw e // Re-throw cancellation exceptions as they are not indicative of a tool failure.
@@ -89,6 +86,13 @@ internal class ListMcpResourceTemplatesTool(private val mcpSession: McpAsyncClie
   }
 
   companion object {
+    private const val DESCRIPTION =
+      "List resource templates available on the MCP server. Templates cover families of " +
+        "resources that cannot be enumerated, so they never appear in list_mcp_resources. Each " +
+        "entry has a 'uriTemplate' such as 'file:///{path}': substitute concrete values for the " +
+        "{variables} yourself, then call load_mcp_resource with the resulting URI as its 'uri' " +
+        "argument to read it."
+
     const val TEMPLATE_NAME = "name"
     const val TEMPLATE_URI_TEMPLATE = "uriTemplate"
     const val TEMPLATE_DESCRIPTION = "description"
