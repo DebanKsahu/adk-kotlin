@@ -1,5 +1,49 @@
 # Changelog
 
+## [0.7.0](https://github.com/google/adk-kotlin/compare/v0.6.0...v0.7.0) (2026-08-03)
+
+
+### Features
+
+* accept plugins on the agent-based InMemoryRunner constructor ([3fc4af7](https://github.com/google/adk-kotlin/commit/3fc4af75805b6325987a4995dd5c4bf8b9b9549e))
+* add a context-caching demo agent example ([89d1ee1](https://github.com/google/adk-kotlin/commit/89d1ee1692f2f5224a80f053e10573ef702db733))
+* add a Vertex AI Memory Bank-backed `MemoryService` ([d8e96e7](https://github.com/google/adk-kotlin/commit/d8e96e713a3990d4dbebb6214ad6192365674cff))
+* add a Vertex AI RAG-backed `MemoryService` ([d0cc79d](https://github.com/google/adk-kotlin/commit/d0cc79df9ad510bf88b7c52c2cd2b7661296fdf3))
+* add a Vertex AI-backed `SessionService` ([c746941](https://github.com/google/adk-kotlin/commit/c746941f0bf8f6a7d3ae41f84f988a0adbda9c9e))
+* add conformance harness, grounding metadata, and web server plugins ([1d6b45c](https://github.com/google/adk-kotlin/commit/1d6b45cb63356d0cc86fca581177be323883501d))
+* add createHttpOptions to ContextCacheConfig ([52f54d5](https://github.com/google/adk-kotlin/commit/52f54d5f6a2843ccd0fc17bafc29e486ae0a912d))
+* add memory-write helpers to `CallbackContext` ([9be9908](https://github.com/google/adk-kotlin/commit/9be99087cda43179b8422c71dc5c67badac1e518))
+* drop the internal opaqueData field in Part ([e40cfe1](https://github.com/google/adk-kotlin/commit/e40cfe1173c40af340254e1ddd6566b44d489eb5))
+* make McpToolset headerProvider a suspend function ([1021557](https://github.com/google/adk-kotlin/commit/10215577296cbd887bf9eb311f51bfe353f33ad0))
+* **mcp:** give McpToolset a typed, paged internal resource API ([29b232c](https://github.com/google/adk-kotlin/commit/29b232cfbb02d7c70689cf9caa5bbb934f276842))
+* **mcp:** load MCP resources by name or URI ([c986cc6](https://github.com/google/adk-kotlin/commit/c986cc6628430d89d99ae6b6ba99eeed9ef06797))
+* **mcp:** make McpToolset tool filtering context-aware via the shared ToolFilter ([81583be](https://github.com/google/adk-kotlin/commit/81583be2631ff60e23642d035dcc7c290c942d9e))
+* **mcp:** make the MCP resource-template flow usable end to end ([80b91b4](https://github.com/google/adk-kotlin/commit/80b91b4d81501d53db7f0e6329767b1f758226ca))
+* **memory:** add on-device AppSearchMemoryService for Android ([03b63cb](https://github.com/google/adk-kotlin/commit/03b63cbbb299be2984f84c36efee140a7d4eaa62))
+* **tools:** add ToolFilter and ToolPredicate for context-aware tool selection ([8fae51e](https://github.com/google/adk-kotlin/commit/8fae51ea53c1f3998d2dc90c4dd52012271a6acf))
+* warn when an MCP tool schema declares a union type ([c26bfa3](https://github.com/google/adk-kotlin/commit/c26bfa375a67a5024de20da7617c4e87131eb20d))
+
+
+### Bug Fixes
+
+* allow hyphens in App names ([34ff744](https://github.com/google/adk-kotlin/commit/34ff7447da5fc53d64ce8620f53747645a29a028))
+* make Session.events thread-safe against concurrent modification ([6c2a295](https://github.com/google/adk-kotlin/commit/6c2a29568621b2674b3f4463194d932be6e5c8c8))
+* marshal MCP tool-call results into JSON-native maps ([4fc6a25](https://github.com/google/adk-kotlin/commit/4fc6a25c4f6d2c6ee6868fc25b45fdbda3bd73d4))
+* **mcp:** send a progress token on MCP tool calls so progress consumers fire ([2d2fc72](https://github.com/google/adk-kotlin/commit/2d2fc72617d860c4a1dfd37ecd3be9c5a3e95007))
+* migrate web server serialization from Gson to kotlinx-serialization ([e0b9255](https://github.com/google/adk-kotlin/commit/e0b925540dff5403edafb38a2564fed74937e35d))
+* **sessions:** apply afterTimestamp and numRecentEvents together in VertexAiSessionService ([000b120](https://github.com/google/adk-kotlin/commit/000b1209051bfb7f01047eb411b7c8a2d4419cd6))
+* **sessions:** apply numRecentEvents and afterTimestamp together in InMemorySessionService ([e2f7b49](https://github.com/google/adk-kotlin/commit/e2f7b49562cc5c07f3b314b9cb2793570cac3f6d))
+* **sessions:** enforce Vertex AI session ownership and report backend user id ([9675990](https://github.com/google/adk-kotlin/commit/96759909075e912b69ae35d1a8d2cd0b3595df34))
+* Set the user role on Content created by AgentTool ([43b5592](https://github.com/google/adk-kotlin/commit/43b5592bea271511c735e1bd98ae81f62a900cc0))
+* tear down all MCP sessions on McpToolset.close and share one pooled session ([93a1c80](https://github.com/google/adk-kotlin/commit/93a1c807926a3a1d87374e8459f1ab2ec8cfca81))
+* validate agent names in BaseAgent ([dad9854](https://github.com/google/adk-kotlin/commit/dad98546e0985c7cf8f73ee56de961a1bc2b72cc))
+* **webserver:** stream SSE via the async channel to avoid truncating large responses ([4337546](https://github.com/google/adk-kotlin/commit/4337546b820084511bb3c8e08fd0a3e04b1f5f3b))
+
+
+### Documentation
+
+* summarize the published modules and point at the examples directory ([ada78af](https://github.com/google/adk-kotlin/commit/ada78af3298c227fd5564552765b7e3a8154b3c4))
+
 ## [0.6.0](https://github.com/google/adk-kotlin/compare/v0.5.0...v0.6.0) (2026-07-20)
 
 
