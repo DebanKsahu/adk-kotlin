@@ -102,6 +102,40 @@ class InMemoryRunnerTest {
   }
 
   @Test
+  fun constructedFromAgent_appliesPlugins() {
+    val plugin =
+      object : Plugin {
+        override val name = "agent-plugin"
+      }
+
+    val runner = InMemoryRunner(agent = dummyAgent, plugins = listOf(plugin))
+
+    assertThat(runner.pluginManager.getPlugin("agent-plugin")).isSameInstanceAs(plugin)
+  }
+
+  /**
+   * Agent names allow dots, spaces and a leading underscore, none of which [App] accepts as an app
+   * name. The dev server derives the app name from the request, so it needs plugins on a runner
+   * whose app name is taken as given.
+   */
+  @Test
+  fun constructedFromAgent_withPlugins_keepsAppNameAppWouldReject() {
+    val plugin =
+      object : Plugin {
+        override val name = "agent-plugin"
+      }
+
+    val runner =
+      InMemoryRunner(agent = dummyAgent, appName = "my.dummy agent", plugins = listOf(plugin))
+
+    assertThat(runner.appName).isEqualTo("my.dummy agent")
+    assertThat(runner.pluginManager.getPlugin("agent-plugin")).isSameInstanceAs(plugin)
+    assertFailsWith<IllegalArgumentException> {
+      App(appName = "my.dummy agent", rootAgent = dummyAgent, plugins = listOf(plugin))
+    }
+  }
+
+  @Test
   fun close_closesPluginsOwnedByRunner() {
     var closed = false
     val plugin =

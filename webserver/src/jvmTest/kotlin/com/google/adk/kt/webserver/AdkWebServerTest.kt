@@ -23,6 +23,7 @@ import com.google.adk.kt.agents.RunConfig
 import com.google.adk.kt.artifacts.ArtifactService
 import com.google.adk.kt.events.Event
 import com.google.adk.kt.memory.MemoryService
+import com.google.adk.kt.plugins.Plugin
 import com.google.adk.kt.plugins.PluginManager
 import com.google.adk.kt.runners.Runner
 import com.google.adk.kt.sessions.GetSessionConfig
@@ -109,6 +110,16 @@ class FakeAgentLoader : AgentLoader {
   override fun listAgents() = listOf("mock-agent")
 
   override fun loadAgent(agentName: String) = if (agentName == "mock-agent") FakeAgent() else null
+}
+
+/** A [Plugin] that rewrites every event, so a response body shows whether it was wired in. */
+class StampingPlugin : Plugin {
+  override val name = "stamping-plugin"
+
+  override suspend fun onEvent(invocationContext: InvocationContext, event: Event) =
+    event.copy(
+      content = Content(role = "model", parts = listOf(Part(text = "stamped by the plugin")))
+    )
 }
 
 class FakeRunner : Runner {
@@ -202,6 +213,30 @@ class AdkWebServerTest {
     assertThat(body).contains("\"turnComplete\":true")
     assertThat(body).doesNotContain("\"partial\"")
     assertThat(body).doesNotContain("\"interrupted\"")
+  }
+
+  @Test
+  fun runRoute_withPlugins_appliesThemToTheRunner() = testApplication {
+    application {
+      adkModule(
+        sessionService,
+        artifactService,
+        agentLoader,
+        ApiServerSpanExporter(),
+        plugins = listOf(StampingPlugin()),
+      )
+    }
+
+    val response =
+      client.post("/run") {
+        contentType(ContentType.Application.Json)
+        setBody(
+          "{\"appName\":\"mock-agent\",\"userId\":\"testUser\",\"sessionId\":\"testSession\",\"streaming\":false,\"newMessage\":{\"role\":\"user\",\"parts\":[{\"text\":\"Hello agent\"}]}}"
+        )
+      }
+
+    assertThat(response.status).isEqualTo(HttpStatusCode.OK)
+    assertThat(response.bodyAsText()).contains("stamped by the plugin")
   }
 
   @Test

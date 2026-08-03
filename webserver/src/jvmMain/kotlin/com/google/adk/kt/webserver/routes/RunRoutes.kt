@@ -20,7 +20,6 @@ import com.google.adk.kt.agents.BaseAgent
 import com.google.adk.kt.agents.RunConfig
 import com.google.adk.kt.agents.StreamingMode
 import com.google.adk.kt.annotations.FrameworkInternalApi
-import com.google.adk.kt.apps.App
 import com.google.adk.kt.artifacts.ArtifactService
 import com.google.adk.kt.plugins.Plugin
 import com.google.adk.kt.runners.InMemoryRunner
@@ -115,9 +114,11 @@ fun Route.runRoutes(
 }
 
 /**
- * Builds an [InMemoryRunner]. With no [plugins] (the default web-server case) it uses the runner
- * constructor that accepts any [appName]. When [plugins] are supplied it routes through [App],
- * whose [App.appName] must be a valid identifier.
+ * Builds an [InMemoryRunner] from the root [agent].
+ *
+ * [appName] comes from the request and names an agent, so it is passed to the runner as given: an
+ * `App` would additionally require it to be a valid app name, which is a narrower grammar than
+ * agent names allow.
  */
 private fun buildRunner(
   agent: BaseAgent,
@@ -126,17 +127,10 @@ private fun buildRunner(
   artifactService: ArtifactService,
   plugins: List<Plugin>,
 ): InMemoryRunner =
-  if (plugins.isEmpty()) {
-    InMemoryRunner(
-      agent = agent,
-      appName = appName,
-      sessionService = sessionService,
-      artifactService = artifactService,
-    )
-  } else {
-    InMemoryRunner(
-      app = App(appName = appName, rootAgent = agent, plugins = plugins),
-      sessionService = sessionService,
-      artifactService = artifactService,
-    )
-  }
+  InMemoryRunner(
+    agent = agent,
+    appName = appName,
+    sessionService = sessionService,
+    artifactService = artifactService,
+    plugins = plugins,
+  )

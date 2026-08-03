@@ -23,6 +23,7 @@ import com.google.adk.kt.artifacts.ArtifactService
 import com.google.adk.kt.artifacts.InMemoryArtifactService
 import com.google.adk.kt.memory.InMemoryMemoryService
 import com.google.adk.kt.memory.MemoryService
+import com.google.adk.kt.plugins.Plugin
 import com.google.adk.kt.plugins.PluginManager
 import com.google.adk.kt.sessions.InMemorySessionService
 import com.google.adk.kt.sessions.SessionService
@@ -35,14 +36,21 @@ import com.google.adk.kt.sessions.SessionService
  */
 open class InMemoryRunner : AbstractRunner {
 
-  /** Creates an [InMemoryRunner] from a root [agent] and default in-memory services. */
+  /**
+   * Creates an [InMemoryRunner] from a root [agent], its [plugins], and default in-memory services.
+   *
+   * [appName] is used as given, whereas the [App]-based constructor validates it against the
+   * [App.appName] grammar. Resumability, compaction and context caching are configurable only
+   * through an [App].
+   */
   constructor(
     agent: BaseAgent,
     appName: String = "InMemoryRunner",
     sessionService: SessionService = InMemorySessionService(),
     artifactService: ArtifactService? = InMemoryArtifactService(),
     memoryService: MemoryService? = InMemoryMemoryService(),
-  ) : super(appName, agent, sessionService, artifactService, memoryService, PluginManager())
+    plugins: List<Plugin> = emptyList(),
+  ) : super(appName, agent, sessionService, artifactService, memoryService, PluginManager(plugins))
 
   /**
    * Creates an [InMemoryRunner] from an [App], deriving its [App.appName], [App.rootAgent],
