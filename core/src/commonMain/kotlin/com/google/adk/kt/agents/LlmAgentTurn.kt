@@ -212,6 +212,9 @@ internal class LlmAgentTurn(
         this[TelemetryAttributes.GCP_VERTEX_AGENT_LLM_RESPONSE] = EMPTY_JSON
       },
     ) { span, spanContext ->
+      // One context for this step's before/after-model and on-model-error callbacks; their
+      // accumulated actions reach the emitted event via withActionsFrom.
+      var modelResponseEvent = createModelResponseEvent()
       val callbackContext = CallbackContext(context)
 
       // 1. Run before model callbacks.
@@ -229,7 +232,8 @@ internal class LlmAgentTurn(
         ) {
           is CallbackChoice.Continue -> result.value
           is CallbackChoice.Break -> {
-            processModelResponse(request, result.value, createModelResponseEvent()) { emit(it) }
+            modelResponseEvent = modelResponseEvent.withActionsFrom(callbackContext)
+            processModelResponse(request, result.value, modelResponseEvent) { emit(it) }
             return@tracedFlow
           }
         }
@@ -240,7 +244,6 @@ internal class LlmAgentTurn(
       // doesn't consume the budget (parity with Python ADK base_llm_flow); throwing aborts the run.
       context.incrementLlmCallsCount()
 
-      var modelResponseEvent = createModelResponseEvent()
       span[TelemetryAttributes.GCP_VERTEX_AGENT_EVENT_ID] = modelResponseEvent.id
       // Tracks the last response seen so response-derived span attributes (usage, finish reasons,
       // serialized response) reflect the final value, matching Python's single `trace_call_llm`.
@@ -268,6 +271,7 @@ internal class LlmAgentTurn(
               )
             lastResponse = currentResponse
 
+            modelResponseEvent = modelResponseEvent.withActionsFrom(callbackContext)
             processModelResponse(currentRequest, currentResponse, modelResponseEvent) { event ->
               modelResponseEvent =
                 modelResponseEvent.copy(
@@ -300,6 +304,7 @@ internal class LlmAgentTurn(
           if (e !is CancellationException) {
             span.recordException(e)
           }
+          modelResponseEvent = modelResponseEvent.withActionsFrom(callbackContext)
           processModelResponse(currentRequest, recoveredResponse, modelResponseEvent) { emit(it) }
         } else {
           throw e
@@ -369,6 +374,23 @@ internal class LlmAgentTurn(
       author = agent.name,
       branch = context.branch,
     )
+
+  /**
+   * Returns this event carrying the actions [callbackContext] accumulated, so a model callback's
+   * writes reach the session. Python and Java ADK instead alias the event's actions into the
+   * context; Kotlin cannot, because [CallbackContext.updateState] replaces the actions object
+   * rather than mutating it. The whole object moves, so control-flow signals cross too, not just
+   * the deltas.
+   *
+   * Every event a step emits can therefore share one mutable [EventActions], and writers such as
+   * `CallbackContext.saveArtifact`, [EventActions.removeStateByKey] and
+   * `LlmAgent.maybeSaveOutputToState` mutate it in place, so a late write also shows up on partial
+   * events already emitted. Java shares the same way; Python instead snapshots the actions onto
+   * each yielded event. Session state is unaffected, as partial events are not appended.
+   */
+  private fun Event.withActionsFrom(callbackContext: CallbackContext): Event =
+    if (actions === callbackContext.eventActions) this
+    else copy(actions = callbackContext.eventActions)
 
   private suspend fun processModelResponse(
     request: LlmRequest,
