@@ -38,6 +38,7 @@ import com.google.adk.kt.types.ThinkingLevel
 import com.google.adk.kt.types.Tool
 import com.google.adk.kt.types.Type
 import com.google.adk.kt.types.UsageMetadata
+import com.google.firebase.ai.type.BlockReason as FirebaseBlockReason
 import com.google.firebase.ai.type.Citation as FirebaseCitation
 import com.google.firebase.ai.type.CitationMetadata as FirebaseCitationMetadata
 import com.google.firebase.ai.type.Content as FirebaseContent
@@ -131,7 +132,11 @@ internal class Conversions {
       logger.warn { "Multiple candidates found in the response, only the first one will be used" }
     }
 
-    val finishReason = candidate?.finishReason?.let { toAdkFinishReason(it) }
+    // Mirror Gemini's LlmResponse.from(): fall back to the block reason when there is no candidate,
+    // so a blocked response still carries a finish reason (and therefore an error code).
+    val finishReason =
+      candidate?.finishReason?.let { toAdkFinishReason(it) }
+        ?: response.promptFeedback?.blockReason?.let { blockReasonToAdkFinishReason(it) }
     return LlmResponse(
       content = candidate?.content?.let { toAdkContent(it) },
       usageMetadata = response.usageMetadata?.let { toAdkUsageMetadata(it) },
@@ -140,16 +145,21 @@ internal class Conversions {
       citationMetadata = candidate?.citationMetadata?.let { toAdkCitationMetadata(it) },
       groundingMetadata = candidate?.groundingMetadata?.let { toAdkGroundingMetadata(it) },
       errorMessage =
-        if (
-          (response.promptFeedback?.blockReason != null ||
-            response.promptFeedback?.blockReasonMessage != null)
-        ) {
-          "Content was blocked with reason: ${response.promptFeedback?.blockReason} and message: ${response.promptFeedback?.blockReasonMessage}"
-        } else {
-          null
-        },
+        toErrorMessage(
+          finishReason,
+          candidate?.finishMessage ?: response.promptFeedback?.blockReasonMessage,
+        ),
     )
   }
+
+  /**
+   * Returns the error message for a response, or `null` if it is not an error. Only a finish reason
+   * other than [FinishReason.STOP] is treated as an error; in that case [message] is used, falling
+   * back to a generic "Unknown error.". This matches the behavior of Gemini backend's
+   * `LlmResponse.from()`.
+   */
+  fun toErrorMessage(finishReason: FinishReason?, message: String?): String? =
+    finishReason?.takeIf { it != FinishReason.STOP }?.let { message ?: "Unknown error." }
 
   fun toAdkCitationMetadata(citationMetadata: FirebaseCitationMetadata): CitationMetadata =
     CitationMetadata(citationSources = citationMetadata.citations.map { toAdkCitation(it) })
@@ -178,6 +188,15 @@ internal class Conversions {
       FirebaseFinishReason.SPII -> FinishReason.SPII
       FirebaseFinishReason.UNKNOWN -> FinishReason.FINISH_REASON_UNSPECIFIED
       FirebaseFinishReason.UNEXPECTED_TOOL_CALL -> FinishReason.UNEXPECTED_TOOL_CALL
+      else -> FinishReason.FINISH_REASON_UNSPECIFIED
+    }
+
+  fun blockReasonToAdkFinishReason(blockReason: FirebaseBlockReason): FinishReason =
+    when (blockReason) {
+      FirebaseBlockReason.SAFETY -> FinishReason.SAFETY
+      FirebaseBlockReason.BLOCKLIST -> FinishReason.BLOCKLIST
+      FirebaseBlockReason.PROHIBITED_CONTENT -> FinishReason.PROHIBITED_CONTENT
+      FirebaseBlockReason.OTHER -> FinishReason.OTHER
       else -> FinishReason.FINISH_REASON_UNSPECIFIED
     }
 

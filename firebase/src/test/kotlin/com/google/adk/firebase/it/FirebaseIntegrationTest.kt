@@ -21,13 +21,19 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.google.adk.firebase.models.Firebase
 import com.google.adk.kt.agents.Instruction
 import com.google.adk.kt.agents.LlmAgent
+import com.google.adk.kt.agents.RunConfig
+import com.google.adk.kt.agents.StreamingMode
 import com.google.adk.kt.events.Event
 import com.google.adk.kt.logging.LoggerFactory
+import com.google.adk.kt.models.LlmRequest
+import com.google.adk.kt.models.LlmResponse
 import com.google.adk.kt.runners.InMemoryRunner
 import com.google.adk.kt.tools.FunctionTool
 import com.google.adk.kt.tools.ToolContext
 import com.google.adk.kt.types.Content
+import com.google.adk.kt.types.FinishReason
 import com.google.adk.kt.types.FunctionDeclaration
+import com.google.adk.kt.types.GenerateContentConfig
 import com.google.adk.kt.types.Schema
 import com.google.adk.kt.types.Type
 import com.google.common.truth.Truth.assertThat
@@ -96,6 +102,9 @@ class FirebaseIntegrationTest {
       events
         .filter { it.errorCode != null || it.errorMessage != null }
         .map { "author=${it.author}, code=${it.errorCode}, message=${it.errorMessage}" }
+
+    private fun responseText(response: LlmResponse): String =
+      response.content?.parts?.mapNotNull { it.text }?.joinToString("").orEmpty()
 
     /**
      * Deletes the [FirebaseApp] this class created so it does not leak into other test classes
@@ -298,6 +307,165 @@ class FirebaseIntegrationTest {
 
     // The final answer should reflect the value returned by the tool.
     val text = aggregateText(events)
+    log.info { "Aggregated response text: $text" }
+
+    assertThat(text).isNotEmpty()
+    assertThat(text).contains(magicTemperatureCelsius.toString())
+  }
+
+  /**
+   * Checks that a streaming turn emits the model's chunks as partial responses and closes with a
+   * single non-partial response holding the whole reply.
+   */
+  @Test
+  fun generateContent_streamTrue_emitsPartialChunksThenAggregatedFinal(): Unit = runBlocking {
+    // A long answer, so the reply spans several chunks rather than arriving in one.
+    val question = "Count from 1 to 20, separating the numbers with commas."
+    log.info { "Sending user question: $question" }
+
+    val request = LlmRequest(contents = listOf(Content.fromText(role = "user", text = question)))
+    val responses = firebaseModel.generateContent(request, stream = true).toList()
+
+    responses.forEachIndexed { index, response -> log.info { "Response[$index]: $response" } }
+
+    val partials = responses.filter { it.partial }
+    val finals = responses.filter { !it.partial }
+
+    assertThat(partials).isNotEmpty()
+    assertThat(finals).hasSize(1)
+    assertThat(responses.last().partial).isFalse()
+
+    val finalResponse = finals.single()
+    // A clean stop, not a truncation or error.
+    assertThat(finalResponse.finishReason).isEqualTo(FinishReason.STOP)
+    assertThat(finalResponse.errorCode).isNull()
+
+    // Concatenating the streamed partials must reproduce the final reply exactly.
+    val streamedText = partials.joinToString("") { responseText(it) }
+    val finalText = responseText(finalResponse)
+    log.info { "Aggregated response text: $finalText" }
+
+    assertThat(finalText).isNotEmpty()
+    assertThat(finalText).isEqualTo(streamedText)
+  }
+
+  /**
+   * A streaming turn truncated at `MAX_TOKENS` completes with a single terminal error [LlmResponse]
+   * (`finishReason` and `errorCode` = `MAX_TOKENS`) instead of throwing.
+   */
+  @Test
+  fun generateContent_streamTruncatedAtMaxTokens_emitsTerminalErrorResponse(): Unit = runBlocking {
+    // A tiny output budget against a long-answer prompt forces a non-STOP (MAX_TOKENS) finish.
+    val question = "Write a detailed 500-word essay about the history of the ocean."
+    log.info { "Sending user question with a 1-token output budget: $question" }
+
+    val request =
+      LlmRequest(
+        contents = listOf(Content.fromText(role = "user", text = question)),
+        config = GenerateContentConfig(maxOutputTokens = 1),
+      )
+
+    // The turn must complete: `.toList()` returning (rather than throwing) is the recovery
+    // assertion.
+    val responses = firebaseModel.generateContent(request, stream = true).toList()
+    responses.forEachIndexed { index, response -> log.info { "Response[$index]: $response" } }
+
+    // Exactly one terminal (non-partial) response, carrying the truncation as an error rather than
+    // as a thrown exception.
+    val finals = responses.filter { !it.partial }
+    assertThat(finals).hasSize(1)
+
+    val finalResponse = finals.single()
+    assertThat(finalResponse.finishReason).isEqualTo(FinishReason.MAX_TOKENS)
+    assertThat(finalResponse.errorCode).isEqualTo(FinishReason.MAX_TOKENS.name)
+  }
+
+  /**
+   * Checks that a tool is called once when streaming. Firebase sends a function call whole in one
+   * chunk and the aggregator repeats it in the final response, so the same call reaches the agent
+   * twice: once in a partial event and once in the non-partial one that may execute it.
+   */
+  @Test
+  fun runAsync_streamingWithTool_invokesToolExactlyOnce(): Unit = runBlocking {
+    val temperatureToolName = "get_current_temperature"
+    val magicTemperatureCelsius = 42
+    var invocationCount = 0
+
+    val getCurrentTemperatureTool =
+      object :
+        FunctionTool(
+          name = temperatureToolName,
+          description = "Returns the current temperature in Celsius for a given location.",
+        ) {
+        override fun declaration(): FunctionDeclaration =
+          FunctionDeclaration(
+            name = name,
+            description = description,
+            parameters =
+              Schema(
+                type = Type.OBJECT,
+                properties =
+                  mapOf(
+                    "location" to
+                      Schema(
+                        type = Type.STRING,
+                        description = "The city to look up, e.g. 'Mountain View'.",
+                      )
+                  ),
+                required = listOf("location"),
+              ),
+          )
+
+        override suspend fun execute(context: ToolContext, args: Map<String, Any>): Any {
+          invocationCount++
+          log.info { "Tool invoked with location=${args["location"]}" }
+          return mapOf("temperature_celsius" to magicTemperatureCelsius)
+        }
+      }
+
+    val weatherAgent =
+      LlmAgent(
+        name = "streamingWeatherAgent",
+        model = firebaseModel,
+        instruction =
+          Instruction(
+            text =
+              "You are a helpful assistant. Use the available tools to answer the user's question " +
+                "and state the exact temperature value returned by the tool."
+          ),
+        tools = listOf(getCurrentTemperatureTool),
+      )
+    val weatherRunner = InMemoryRunner(weatherAgent, appName = "integration tests")
+
+    val question = "What is the current temperature in Mountain View? Use the available tool."
+    log.info { "Sending user question: $question" }
+
+    val events =
+      weatherRunner
+        .runAsync(
+          "test_user",
+          "test_session",
+          newMessage = Content.fromText(role = "user", text = question),
+          runConfig = RunConfig(streamingMode = StreamingMode.SSE),
+        )
+        .toList()
+
+    logEvents(events)
+    assertThat(events).isNotEmpty()
+    assertThat(modelErrors(events)).isEmpty()
+
+    // Without partials, streaming never happened and "invoked once" would pass trivially.
+    assertThat(events.any { it.partial }).isTrue()
+    assertThat(invocationCount).isEqualTo(1)
+
+    // Partials also carry the call, so containsExactly must see only the non-partial events.
+    val finalEvents = events.filter { !it.partial }
+    val functionCallNames = finalEvents.flatMap { it.functionCalls() }.map { it.name }
+    assertThat(functionCallNames).containsExactly(temperatureToolName)
+    val functionResponseNames = finalEvents.flatMap { it.functionResponses() }.map { it.name }
+    assertThat(functionResponseNames).containsExactly(temperatureToolName)
+
+    val text = aggregateText(finalEvents)
     log.info { "Aggregated response text: $text" }
 
     assertThat(text).isNotEmpty()

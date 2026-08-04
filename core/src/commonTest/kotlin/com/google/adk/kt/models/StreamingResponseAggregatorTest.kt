@@ -14,8 +14,11 @@
  * limitations under the License.
  */
 
+@file:OptIn(FrameworkInternalApi::class)
+
 package com.google.adk.kt.models
 
+import com.google.adk.kt.annotations.FrameworkInternalApi
 import com.google.adk.kt.types.Content
 import com.google.adk.kt.types.FinishReason
 import com.google.adk.kt.types.FunctionCall

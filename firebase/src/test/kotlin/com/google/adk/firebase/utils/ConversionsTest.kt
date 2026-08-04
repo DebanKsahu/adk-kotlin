@@ -33,13 +33,16 @@ import com.google.adk.kt.types.ThinkingConfig
 import com.google.adk.kt.types.ThinkingLevel
 import com.google.adk.kt.types.Type
 import com.google.common.truth.Truth.assertThat
+import com.google.firebase.ai.type.BlockReason
 import com.google.firebase.ai.type.Content as FirebaseContent
 import com.google.firebase.ai.type.FileDataPart
 import com.google.firebase.ai.type.FinishReason as FirebaseFinishReason
 import com.google.firebase.ai.type.FunctionCallPart
 import com.google.firebase.ai.type.FunctionResponsePart
+import com.google.firebase.ai.type.GenerateContentResponse
 import com.google.firebase.ai.type.InlineDataPart
 import com.google.firebase.ai.type.Part as FirebasePart
+import com.google.firebase.ai.type.PromptFeedback
 import com.google.firebase.ai.type.PublicPreviewAPI
 import com.google.firebase.ai.type.TextPart
 import com.google.firebase.ai.type.ThinkingLevel as FirebaseThinkingLevel
@@ -305,6 +308,73 @@ class ConversionsTest {
     assertThat(adkContent.role).isEqualTo(Role.USER)
     assertThat(adkContent.parts).hasSize(1)
     assertThat(adkContent.parts[0].text).isEqualTo("Hello")
+  }
+
+  /** A non-STOP finish with no block feedback falls back to the "Unknown error." message. */
+  @Test
+  fun toErrorMessage_nonStopFinish_returnsUnknownError() {
+    assertThat(Conversions().toErrorMessage(FinishReason.MAX_TOKENS, message = null))
+      .isEqualTo("Unknown error.")
+  }
+
+  /** A successful (STOP) finish is not flagged as an error. */
+  @Test
+  fun toErrorMessage_stopFinish_returnsNull() {
+    assertThat(Conversions().toErrorMessage(FinishReason.STOP, message = null)).isNull()
+  }
+
+  /** No finish reason is not flagged as an error. */
+  @Test
+  fun toErrorMessage_noFinish_returnsNull() {
+    assertThat(Conversions().toErrorMessage(finishReason = null, message = null)).isNull()
+  }
+
+  /** A STOP finish is never an error, even if a message is present. */
+  @Test
+  fun toErrorMessage_stopFinishWithMessage_returnsNull() {
+    assertThat(Conversions().toErrorMessage(FinishReason.STOP, message = "ignored")).isNull()
+  }
+
+  /** A non-STOP finish uses the supplied message when one is present. */
+  @Test
+  fun toErrorMessage_nonStopWithMessage_returnsMessage() {
+    assertThat(Conversions().toErrorMessage(FinishReason.MAX_TOKENS, message = "boom"))
+      .isEqualTo("boom")
+  }
+
+  /** An empty response (no candidate) is not flagged as an error. */
+  @OptIn(PublicPreviewAPI::class)
+  @Test
+  fun convertResponse_noCandidate_hasNoError() {
+    val conversions = Conversions()
+    val response =
+      GenerateContentResponse(candidates = emptyList(), promptFeedback = null, usageMetadata = null)
+
+    val llmResponse = conversions.convertResponse(response)
+
+    assertThat(llmResponse.errorCode).isNull()
+    assertThat(llmResponse.errorMessage).isNull()
+  }
+
+  /**
+   * A blocked response with no candidate derives a finish reason and error from the block reason.
+   */
+  @OptIn(PublicPreviewAPI::class)
+  @Test
+  fun convertResponse_blockedNoCandidate_hasError() {
+    val conversions = Conversions()
+    val response =
+      GenerateContentResponse(
+        candidates = emptyList(),
+        promptFeedback = PromptFeedback(BlockReason.SAFETY, emptyList(), "blocked"),
+        usageMetadata = null,
+      )
+
+    val llmResponse = conversions.convertResponse(response)
+
+    assertThat(llmResponse.finishReason).isEqualTo(FinishReason.SAFETY)
+    assertThat(llmResponse.errorCode).isEqualTo(FinishReason.SAFETY.name)
+    assertThat(llmResponse.errorMessage).isEqualTo("blocked")
   }
 
   @Test

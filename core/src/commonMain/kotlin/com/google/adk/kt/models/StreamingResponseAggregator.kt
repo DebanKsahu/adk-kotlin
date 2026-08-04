@@ -16,6 +16,7 @@
 
 package com.google.adk.kt.models
 
+import com.google.adk.kt.annotations.FrameworkInternalApi
 import com.google.adk.kt.types.CitationMetadata
 import com.google.adk.kt.types.Content
 import com.google.adk.kt.types.FinishReason
@@ -38,7 +39,8 @@ import kotlinx.coroutines.sync.withLock
  * responses have been processed, the [aggregate] method should be called to retrieve the final
  * aggregated [LlmResponse] containing all parts in the order they were received by the aggregator.
  */
-internal class StreamingResponseAggregator {
+@FrameworkInternalApi
+class StreamingResponseAggregator {
   private val mutex = Mutex()
   private var lastResponse: LlmResponse? = null
   private var usageMetadata: UsageMetadata? = null

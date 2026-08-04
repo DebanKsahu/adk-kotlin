@@ -16,6 +16,7 @@
 package com.google.adk.kt.models
 
 import com.google.adk.kt.VERSION
+import com.google.adk.kt.annotations.FrameworkInternalApi
 import com.google.adk.kt.logging.LoggerFactory
 import com.google.adk.kt.serialization.Json
 import com.google.adk.kt.types.Content
@@ -130,6 +131,7 @@ class Gemini(
     name,
   )
 
+  @OptIn(FrameworkInternalApi::class)
   override fun generateContent(request: LlmRequest, stream: Boolean): Flow<LlmResponse> = flow {
     val preparedRequest = request.prepareGenerateContentRequest(!client.enterprise)
 
