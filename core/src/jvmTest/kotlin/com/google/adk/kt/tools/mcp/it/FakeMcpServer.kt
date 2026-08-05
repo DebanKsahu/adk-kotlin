@@ -191,6 +191,11 @@ private fun toolSpecifications(token: String): List<SyncToolSpecification> =
  * `annotate(...)`: declares the schema shapes a real server emits that used to convert badly -- an
  * optional argument written as a `["null", ...]` union, an `enum`, an array with no `items`, and a
  * `required` entry naming a property the schema never declares.
+ *
+ * It also carries the keywords a constrained schema uses, an `anyOf` spelling of an optional
+ * argument with its `default` written outside the union, a member naming a type this converter does
+ * not know, a `$ref` into a `$defs` block, and an output schema -- so the wire path covers what the
+ * model is told about a tool as well as what it may send.
  */
 private fun annotateTool(): SyncToolSpecification =
   syncTool(
@@ -203,26 +208,79 @@ private fun annotateTool(): SyncToolSpecification =
             "note" to mapOf("type" to listOf("null", "string")),
             "direction" to mapOf("type" to "string", "enum" to listOf("EAST", "WEST")),
             "tags" to mapOf("type" to "array"),
+            // The same optional-string shape as `note`, with the keywords that describe it, so a
+            // constrained property crosses the wire as well as a bare one.
+            "label" to
+              mapOf(
+                "type" to listOf("null", "string"),
+                "title" to "Label",
+                "pattern" to "^[a-z ]+$",
+                "minLength" to 1,
+                "maxLength" to 80,
+              ),
+            "labels" to mapOf("type" to "array", "minItems" to 1, "maxItems" to 5),
+            "priority" to
+              mapOf(
+                "type" to "integer",
+                "format" to "int32",
+                "minimum" to 1,
+                "maximum" to 9,
+                "default" to 3,
+              ),
+            // `Optional[int] = 5` as a server writes it: the default sits outside the union.
+            "retries" to
+              mapOf(
+                "default" to 5,
+                "anyOf" to listOf(mapOf("type" to "integer"), mapOf("type" to "null")),
+              ),
+            // A union arm naming a type this converter does not know must cost only that arm.
+            "extra" to
+              mapOf("anyOf" to listOf(mapOf("type" to "string"), mapOf("type" to "temperature"))),
+            // How Pydantic writes a nested model: the shape lives under `$defs` and the property
+            // only points at it, so the reference has to survive the wire to be resolvable.
+            "record" to mapOf("\$ref" to "#/\$defs/Record"),
           ),
         required = listOf("direction", "undeclared"),
+        defs =
+          mapOf(
+            "Record" to
+              mapOf(
+                "type" to "object",
+                "properties" to mapOf("id" to mapOf("type" to "string", "maxLength" to 8)),
+                "required" to listOf("id"),
+              )
+          ),
+      ),
+    outputSchema =
+      mapOf(
+        "type" to "object",
+        "properties" to mapOf("stored" to mapOf("type" to "boolean")),
+        "required" to listOf("stored"),
       ),
   ) { _, _ ->
     textResult("annotated")
   }
 
 /**
- * Builds a [SyncToolSpecification] from a tool's [name], [description], [inputSchema], and
- * [handler], hiding the repeated double-builder scaffold so each tool shows only what differs.
+ * Builds a [SyncToolSpecification] from a tool's [name], [description], [inputSchema],
+ * [outputSchema] and [handler], hiding the repeated double-builder scaffold so each tool shows only
+ * what differs.
  */
 private fun syncTool(
   name: String,
   description: String,
   inputSchema: McpSchema.JsonSchema = objectSchema(),
+  outputSchema: Map<String, Any>? = null,
   handler: (McpSyncServerExchange, McpSchema.CallToolRequest) -> McpSchema.CallToolResult,
 ): SyncToolSpecification =
   SyncToolSpecification.builder()
     .tool(
-      McpSchema.Tool.builder().name(name).description(description).inputSchema(inputSchema).build()
+      McpSchema.Tool.builder()
+        .name(name)
+        .description(description)
+        .inputSchema(inputSchema)
+        .apply { outputSchema?.let { outputSchema(it) } }
+        .build()
     )
     .callHandler { exchange, request -> handler(exchange, request) }
     .build()
@@ -446,6 +504,7 @@ private fun textResource(uri: String, text: String): McpSchema.ReadResourceResul
 private fun objectSchema(
   properties: Map<String, Any> = emptyMap(),
   required: List<String> = emptyList(),
+  defs: Map<String, Any>? = null,
 ): McpSchema.JsonSchema =
   // JsonSchema is a Java record, so Kotlin can't use named arguments; the /* name = */ comments
   // label the positional args (several are null) for readability.
@@ -454,7 +513,7 @@ private fun objectSchema(
     /* properties = */ properties,
     /* required = */ required,
     /* additionalProperties = */ null,
-    /* defs = */ null,
+    /* defs = */ defs,
     /* definitions = */ null,
   )
 

@@ -27,4 +27,6 @@ data class FunctionDeclaration(
   val description: String,
   /** The parameters required by this function. */
   val parameters: Schema? = null,
+  /** The shape of the value this function returns, when the tool declares one. */
+  val response: Schema? = null,
 )

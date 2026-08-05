@@ -466,6 +466,11 @@ internal class Conversions {
           }
         }
       }
+      if (response != null) {
+        logger.warn {
+          "Function declaration response schema is not supported in Firebase and is dropped: $name"
+        }
+      }
       FirebaseFunctionDeclaration(
         name = name,
         description = description,

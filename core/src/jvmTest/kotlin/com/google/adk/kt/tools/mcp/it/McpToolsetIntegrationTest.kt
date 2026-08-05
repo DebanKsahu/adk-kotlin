@@ -185,6 +185,11 @@ class McpToolsetIntegrationTest {
     contract.declaration_annotateTool_convertsSchemaShapesThatUsedToFail()
   }
 
+  @Test
+  fun declaration_annotateTool_carriesConstraintsAndOutputSchema(): Unit = runBlocking {
+    contract.declaration_annotateTool_carriesConstraintsAndOutputSchema()
+  }
+
   // --- stdio-only: process lifecycle ---
 
   @Test

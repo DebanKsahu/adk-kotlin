@@ -215,11 +215,13 @@ class GenaiConvertersTest {
         name = "myFunc",
         description = "desc",
         parameters = Schema(type = Type.STRING),
+        response = Schema(type = Type.OBJECT),
       )
     val genaiFunctionDeclaration = adkFunctionDeclaration.toGenaiSdk()
     assertEquals("myFunc", genaiFunctionDeclaration.name)
     assertEquals("desc", genaiFunctionDeclaration.description)
     assertNotNull(genaiFunctionDeclaration.parameters)
+    assertNotNull(genaiFunctionDeclaration.response)
 
     val convertedBack = genaiFunctionDeclaration.fromGenaiSdk()
     assertEquals(adkFunctionDeclaration, convertedBack)

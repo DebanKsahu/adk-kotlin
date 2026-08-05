@@ -379,6 +379,9 @@ internal class ManualOpenApiTool(private val declaration: FunctionDeclaration) :
     tool["name"] = declaration.name
     tool["description"] = declaration.description
     declaration.parameters?.let { params -> tool["parameters"] = params.toMap() }
+    // Describing what the tool returns helps the model decide whether to call it at all, and this
+    // description is plain JSON, so there is nothing stopping it carrying the response schema.
+    declaration.response?.let { response -> tool["response"] = response.toMap() }
     return Json.toJsonString(tool)
   }
 }

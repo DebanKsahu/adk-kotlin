@@ -221,6 +221,58 @@ class McpToolsetContract(private val harness: McpToolsetHarness) {
       assertThat(params.required).containsExactly("direction")
     }
 
+  suspend fun declaration_annotateTool_carriesConstraintsAndOutputSchema() =
+    harness.withToolset(useMcpResources = false) { toolset ->
+      val annotate = toolset.getTools().single { it.name == FakeMcpServer.TOOL_ANNOTATE }
+
+      val declaration = requireNotNull(annotate.declaration())
+      val params = requireNotNull(declaration.parameters)
+      val properties = requireNotNull(params.properties)
+
+      val label = requireNotNull(properties["label"])
+      assertThat(label.title).isEqualTo("Label")
+      assertThat(label.pattern).isEqualTo("^[a-z ]+$")
+      assertThat(label.minLength).isEqualTo(1)
+      assertThat(label.maxLength).isEqualTo(80)
+      // Still nullable, so the constraints ride alongside the null union rather than replacing it.
+      assertThat(label.nullable).isTrue()
+
+      val labels = requireNotNull(properties["labels"])
+      assertThat(labels.minItems).isEqualTo(1)
+      assertThat(labels.maxItems).isEqualTo(5)
+
+      val priority = requireNotNull(properties["priority"])
+      assertThat(priority.format).isEqualTo("int32")
+      assertThat(priority.minimum).isEqualTo(1.0)
+      assertThat(priority.maximum).isEqualTo(9.0)
+      assertThat((priority.default as Number).toInt()).isEqualTo(3)
+
+      // An `anyOf` of X and null folds into a nullable X, keeping the default written beside it.
+      val retries = requireNotNull(properties["retries"])
+      assertThat(retries.type).isEqualTo(Type.INTEGER)
+      assertThat(retries.nullable).isTrue()
+      // This default is exactly what the anyOf fold has to carry over.
+      assertThat((retries.default as Number).toInt()).isEqualTo(5)
+
+      // The unknown arm is dropped; the one the converter understands survives.
+      val extra = requireNotNull(properties["extra"])
+      assertThat(extra.anyOf?.map { it.type }).containsExactly(Type.STRING)
+
+      // A `$ref` only resolves if the server's `$defs` block reaches the client, so this is what
+      // proves the definitions survive transport rather than only in-process conversion.
+      val record = requireNotNull(properties["record"])
+      assertThat(record.type).isEqualTo(Type.OBJECT)
+      assertThat(record.required).containsExactly("id")
+      val id = requireNotNull(record.properties?.get("id"))
+      assertThat(id.type).isEqualTo(Type.STRING)
+      assertThat(id.maxLength).isEqualTo(8)
+
+      val response = requireNotNull(declaration.response)
+      assertThat(response.type).isEqualTo(Type.OBJECT)
+      assertThat(response.required).containsExactly("stored")
+      assertThat(response.properties?.get("stored")?.type).isEqualTo(Type.BOOLEAN)
+    }
+
   private companion object {
     /** The tools [FakeMcpServer] advertises, in the order `McpToolset` returns them. */
     private val ADVERTISED_TOOLS =

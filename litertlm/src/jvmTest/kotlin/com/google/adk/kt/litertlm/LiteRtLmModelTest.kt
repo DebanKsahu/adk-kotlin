@@ -442,6 +442,21 @@ class LiteRtLmModelTest {
   }
 
   @Test
+  fun manualOpenApiTool_getToolDescriptionJsonString_includesResponseSchema() {
+    val declaration =
+      FunctionDeclaration(
+        name = "test_func",
+        description = "Test function",
+        response = Schema(type = Type.OBJECT, properties = mapOf("ok" to Schema(Type.BOOLEAN))),
+      )
+    val tool = ManualOpenApiTool(declaration)
+
+    val expectedJson =
+      """{"name":"test_func","description":"Test function","response":{"type":"object","properties":{"ok":{"type":"boolean"}}}}"""
+    assertEquals(expectedJson, tool.getToolDescriptionJsonString())
+  }
+
+  @Test
   fun toMap_constraintFields_areEmitted() {
     // The tool description is plain JSON, so it can carry every constraint a schema expresses.
     val schema =
