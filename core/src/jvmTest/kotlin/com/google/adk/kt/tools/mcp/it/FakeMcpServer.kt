@@ -67,6 +67,7 @@ object FakeMcpServer {
   const val TOOL_FAIL = "fail"
   const val TOOL_HANG = "hang"
   const val TOOL_GET_RECORD = "get_record"
+  const val TOOL_ANNOTATE = "annotate"
 
   /** Message the [TOOL_FAIL] tool returns inside its `isError: true` result. */
   const val FAIL_MESSAGE = "intentional tool execution error from the 'fail' tool"
@@ -183,7 +184,31 @@ private fun toolSpecifications(token: String): List<SyncToolSpecification> =
     failTool(),
     hangTool(),
     getRecordTool(),
+    annotateTool(),
   )
+
+/**
+ * `annotate(...)`: declares the schema shapes a real server emits that used to convert badly -- an
+ * optional argument written as a `["null", ...]` union, an `enum`, an array with no `items`, and a
+ * `required` entry naming a property the schema never declares.
+ */
+private fun annotateTool(): SyncToolSpecification =
+  syncTool(
+    name = FakeMcpServer.TOOL_ANNOTATE,
+    description = "Records a note against a direction.",
+    inputSchema =
+      objectSchema(
+        properties =
+          mapOf(
+            "note" to mapOf("type" to listOf("null", "string")),
+            "direction" to mapOf("type" to "string", "enum" to listOf("EAST", "WEST")),
+            "tags" to mapOf("type" to "array"),
+          ),
+        required = listOf("direction", "undeclared"),
+      ),
+  ) { _, _ ->
+    textResult("annotated")
+  }
 
 /**
  * Builds a [SyncToolSpecification] from a tool's [name], [description], [inputSchema], and

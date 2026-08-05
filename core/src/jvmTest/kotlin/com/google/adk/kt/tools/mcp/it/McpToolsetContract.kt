@@ -205,6 +205,22 @@ class McpToolsetContract(private val harness: McpToolsetHarness) {
       assertThat(params.properties?.get("b")?.type).isEqualTo(Type.INTEGER)
     }
 
+  suspend fun declaration_annotateTool_convertsSchemaShapesThatUsedToFail() =
+    harness.withToolset(useMcpResources = false) { toolset ->
+      val annotate = toolset.getTools().single { it.name == FakeMcpServer.TOOL_ANNOTATE }
+
+      val params = requireNotNull(annotate.declaration()?.parameters)
+
+      // A ["null", "string"] union used to throw and take the whole toolset's contract down.
+      assertThat(params.properties?.get("note")?.type).isEqualTo(Type.STRING)
+      // enum was dropped even though Schema has always carried one.
+      assertThat(params.properties?.get("direction")?.enum).containsExactly("EAST", "WEST")
+      // The backend rejects an array with no items, so it gets a default.
+      assertThat(params.properties?.get("tags")?.items?.type).isEqualTo(Type.STRING)
+      // "undeclared" names no property, which the backend also rejects.
+      assertThat(params.required).containsExactly("direction")
+    }
+
   private companion object {
     /** The tools [FakeMcpServer] advertises, in the order `McpToolset` returns them. */
     private val ADVERTISED_TOOLS =
@@ -217,6 +233,7 @@ class McpToolsetContract(private val harness: McpToolsetHarness) {
         FakeMcpServer.TOOL_FAIL,
         FakeMcpServer.TOOL_HANG,
         FakeMcpServer.TOOL_GET_RECORD,
+        FakeMcpServer.TOOL_ANNOTATE,
       )
 
     private const val LOAD_MCP_RESOURCE = "load_mcp_resource"

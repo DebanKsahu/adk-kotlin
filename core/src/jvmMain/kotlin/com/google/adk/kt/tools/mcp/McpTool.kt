@@ -48,9 +48,22 @@ internal constructor(
   private val headers: Map<String, String> = emptyMap(),
 ) : BaseTool(name, description) {
 
-  override fun declaration(): FunctionDeclaration? {
+  /**
+   * The converted declaration, built once.
+   *
+   * [declaration] is called for every tool on every model request, and converting a schema is not
+   * free: it walks each property and resolves each `$ref`. The result cannot change, because
+   * [mcpSchemaTool] is an immutable snapshot and a server that changes its tools yields new
+   * [McpTool] instances from `McpToolset.loadTools`. Converting once also means a schema that warns
+   * on the way through -- one truncated past the depth limit, say -- says so once rather than on
+   * every request.
+   *
+   * A failed conversion still throws on every call: `lazy` leaves the value uninitialized when the
+   * initializer throws, so the next access retries and rethrows.
+   */
+  private val convertedDeclaration: FunctionDeclaration by lazy {
     try {
-      return mcpSchemaTool.toAdkFunctionDeclaration()
+      mcpSchemaTool.toAdkFunctionDeclaration()
     } catch (e: RuntimeException) {
       throw McpToolDeclarationException(
         "MCP tool:$name failed to get declaration, inputSchema:${mcpSchemaTool.inputSchema()}. outputSchema: ${mcpSchemaTool.outputSchema()}",
@@ -58,6 +71,8 @@ internal constructor(
       )
     }
   }
+
+  override fun declaration(): FunctionDeclaration? = convertedDeclaration
 
   override suspend fun run(context: ToolContext, args: Map<String, Any>): Any {
     val request = McpSchema.CallToolRequest(name, args, requestMeta(context))

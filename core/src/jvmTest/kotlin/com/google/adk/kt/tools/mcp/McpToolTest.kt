@@ -26,6 +26,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 import kotlinx.coroutines.reactor.mono
 import kotlinx.coroutines.test.runTest
@@ -71,6 +72,42 @@ class McpToolTest {
     val declaration = mcpTool.declaration()
     assertNotNull(declaration)
     assertEquals("testTool", declaration.name)
+  }
+
+  @Test
+  fun declaration_calledTwice_convertsOnlyOnce() {
+    // Every model request asks each tool for its declaration, and converting a schema walks the
+    // whole thing. The answer cannot change for a given tool, so it is built once -- which also
+    // keeps any warning raised during conversion from repeating on every request.
+    val first = mcpTool.declaration()
+    val second = mcpTool.declaration()
+
+    assertSame(first, second)
+  }
+
+  @Test
+  fun declaration_failingConversion_throwsEveryTime() {
+    // A cached value must not turn a permanent failure into a one-off: `lazy` leaves itself
+    // uninitialized when the initializer throws, so each call retries and rethrows.
+    val badSchema =
+      McpSchema.JsonSchema(
+        "object",
+        mapOf("x" to mapOf("type" to "nonsense")),
+        null,
+        null,
+        null,
+        null,
+      )
+    val tool =
+      McpTool(
+        "badTool",
+        "description",
+        McpSchema.Tool.builder().name("badTool").inputSchema(badSchema).build(),
+        mockSessionManager,
+      )
+
+    assertFailsWith<McpToolException.McpToolDeclarationException> { tool.declaration() }
+    assertFailsWith<McpToolException.McpToolDeclarationException> { tool.declaration() }
   }
 
   @Test

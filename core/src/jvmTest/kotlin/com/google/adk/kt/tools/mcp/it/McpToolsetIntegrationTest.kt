@@ -180,6 +180,11 @@ class McpToolsetIntegrationTest {
     contract.declaration_addTool_convertsServerSchemaToTypedParameters()
   }
 
+  @Test
+  fun declaration_annotateTool_convertsSchemaShapesThatUsedToFail(): Unit = runBlocking {
+    contract.declaration_annotateTool_convertsSchemaShapesThatUsedToFail()
+  }
+
   // --- stdio-only: process lifecycle ---
 
   @Test

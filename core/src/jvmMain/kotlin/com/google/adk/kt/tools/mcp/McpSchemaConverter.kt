@@ -23,21 +23,35 @@ import com.google.adk.kt.types.Type
 import io.modelcontextprotocol.spec.McpSchema
 import io.modelcontextprotocol.spec.McpSchema.JsonSchema
 
-/** Converts between MCP schema types and ADK types. */
+/**
+ * Converts between MCP schema types and ADK types.
+ *
+ * A tool's `inputSchema` reaches us as [JsonSchema], whose `properties` are raw JSON maps, so every
+ * keyword a server declares on a *property* survives transport and is available here. The record
+ * itself, however, keeps only `type`, `properties`, `required`, `additionalProperties`, `$defs` and
+ * `definitions`, so keywords written at the *top level* of an `inputSchema` (a `description`, for
+ * instance) are dropped by the SDK before ADK sees them and cannot be recovered.
+ */
 internal object McpSchemaConverter {
 
   private val logger = LoggerFactory.getLogger(McpSchemaConverter::class)
 
-  /** Converts an [McpSchema.Tool] to an [FunctionDeclaration]. */
-  fun McpSchema.Tool.toAdkFunctionDeclaration(): FunctionDeclaration {
-    val inputSchema = inputSchema()?.let { it.toAdkSchema() }
+  /**
+   * Maximum nesting depth walked while converting a JSON Schema.
+   *
+   * A tool schema is data supplied by a remote server, so the recursive descent over `properties`
+   * and `items` is bounded: at this depth a sub-schema converts to an untyped [Schema] instead of
+   * recursing, so a pathologically deep schema cannot overflow the stack.
+   */
+  private const val MAX_SCHEMA_DEPTH = 32
 
-    return FunctionDeclaration(
+  /** Converts an [McpSchema.Tool] to an [FunctionDeclaration]. */
+  fun McpSchema.Tool.toAdkFunctionDeclaration(): FunctionDeclaration =
+    FunctionDeclaration(
       name = name(),
       description = description() ?: "",
-      parameters = inputSchema,
+      parameters = inputSchema()?.toAdkSchema(),
     )
-  }
 
   private fun Any?.safeCastToMapStringAny(): Map<String, Any>? {
     val map = this as? Map<*, *> ?: return null
@@ -63,7 +77,17 @@ internal object McpSchemaConverter {
 
   /** Parses a type string into an ADK [Type]. */
   fun parseTypeString(typeStr: String?): Type =
-    when (typeStr) {
+    typeStr.typeOrNull() ?: throw IllegalArgumentException("Unknown type: $typeStr")
+
+  /**
+   * The [Type] this JSON Schema type name denotes, or `null` when it is not a name JSON Schema
+   * defines.
+   *
+   * Separate from [parseTypeString] so a union can ask whether a member is usable without the
+   * answer being an exception.
+   */
+  private fun String?.typeOrNull(): Type? =
+    when (this) {
       null -> Type.TYPE_UNSPECIFIED
       "string" -> Type.STRING
       "integer" -> Type.INTEGER
@@ -71,68 +95,169 @@ internal object McpSchemaConverter {
       "boolean" -> Type.BOOLEAN
       "array" -> Type.ARRAY
       "object" -> Type.OBJECT
-      else -> throw IllegalArgumentException("Unknown type: $typeStr")
+      "null" -> Type.NULL
+      else -> null
     }
 
   /** Converts a [JsonSchema] to an ADK [Schema]. */
   fun JsonSchema.toAdkSchema(): Schema {
-    val properties =
-      properties()
-        ?.mapNotNull { (key, value) ->
-          value.safeCastToMapStringAny()?.let { key to parsePropertyMap(it) }
-        }
-        ?.toMap()
+    val properties = properties().toAdkSchemaMap(depth = 1)
+    val type = parseTypeString(type())
     return Schema(
-      type = parseTypeString(type()),
+      type = type,
       properties = properties,
-      required = required(),
+      // The record carries no `items` component, so an array here can only take the default.
+      items = defaultItems(type),
+      required = required().requiredIn(properties),
       description = null,
     )
   }
 
   /** Parses a property map into an ADK [Schema]. */
-  fun parsePropertyMap(map: Map<String, Any>): Schema {
-    val typeValue = map["type"]
-    val typeStr =
-      when (typeValue) {
-        is String -> typeValue
-        is List<*> -> {
-          val typeList = typeValue.filterIsInstance<String>()
-          if (typeList.isNotEmpty()) {
-            if (typeList.size > 1) {
-              logger.warn {
-                "MCP tool schema declares a union type $typeList; ADK schemas support a single " +
-                  "type, so only \"${typeList.first()}\" is used and the remaining types are ignored."
-              }
-            }
-            typeList.first()
-          } else {
-            null
-          }
-        }
-        else -> null
+  fun parsePropertyMap(map: Map<String, Any>, depth: Int = 0): Schema {
+    if (depth >= MAX_SCHEMA_DEPTH) {
+      logger.warn {
+        "MCP tool schema nests deeper than $MAX_SCHEMA_DEPTH levels; converting the sub-schema at " +
+          "that depth to an untyped object."
       }
-    val description = map["description"] as? String
+      return Schema(type = Type.OBJECT)
+    }
 
-    val itemsMap = map["items"].safeCastToMapStringAny()
-    val items = itemsMap?.let { parsePropertyMap(it) }
+    // A union of two or more real types cannot be one ADK `Schema`, but it is exactly an `anyOf` of
+    // one sub-schema per type, each carrying the keywords that describe that type. Every branch is
+    // kept, the way Python's `Schema.from_json_schema` does it, rather than picking a winner.
+    val declared = map["type"].declaredTypes()
+    // A name JSON Schema does not define cannot become a branch, and the alternatives beside it
+    // still describe the value, so it is dropped rather than failing the whole declaration. ADK
+    // Python arrives at the same place from the other direction: `_sanitize_schema_type` reduces
+    // the union to one member and never looks at the rest. A union of nothing but unknown names
+    // has no alternative left to describe anything, so it is parsed as written and throws, the way
+    // a single unknown type does.
+    val names = declared.names.filter { it.typeOrNull() != null }.ifEmpty { declared.names }
+    if (names.size > 1) {
+      return Schema(
+        anyOf = names.map { parsePropertyMap(it.branchOf(map), depth) },
+        // A server may spell nullability as a `"null"` member, as the `nullable` keyword, or both,
+        // so the union reads it the same way a single type does.
+        nullable = (map["nullable"] as? Boolean) ?: if (declared.nullable) true else null,
+      )
+    }
 
-    val propertiesMap = map["properties"].safeCastToMapStringAny()
-    val properties =
-      propertiesMap
-        ?.mapNotNull { (key, value) ->
-          value.safeCastToMapStringAny()?.let { key to parsePropertyMap(it) }
-        }
-        ?.toMap()
-
-    val required = map["required"].safeCastToListString()
-
+    val type = parseTypeString(names.singleOrNull())
+    val properties = map["properties"].safeCastToMapStringAny().toAdkSchemaMap(depth + 1)
     return Schema(
-      type = parseTypeString(typeStr),
+      type = type,
       properties = properties,
-      items = items,
-      required = required,
-      description = description,
+      items =
+        map["items"].let { items ->
+          if (items is Boolean) booleanSubSchema()
+          else items.safeCastToMapStringAny()?.let { parsePropertyMap(it, depth + 1) }
+        } ?: defaultItems(type),
+      required = map["required"].safeCastToListString().requiredIn(properties),
+      description = map["description"] as? String,
+      enum = map["enum"].toEnumValues(),
+      // A `"null"` member says the value is optional, which is nullability rather than a type.
+      nullable = (map["nullable"] as? Boolean) ?: if (declared.nullable) true else null,
     )
   }
+
+  /**
+   * Narrows `required` to the properties the schema actually declares.
+   *
+   * A property whose sub-schema is not a JSON object is dropped during conversion, and a server can
+   * also mark a name required without declaring it at all. Either way the backend rejects a
+   * `required` entry it cannot resolve, failing every request the agent makes rather than the one
+   * tool.
+   *
+   * Filtering everything out leaves the field unset rather than empty: "these properties are
+   * required" and "no property is required" are the same statement, and only one of them needs
+   * saying.
+   */
+  private fun List<String>?.requiredIn(properties: Map<String, Schema>?): List<String>? =
+    this?.filter { properties?.containsKey(it) == true }?.takeIf { it.isNotEmpty() }
+
+  /**
+   * What a boolean sub-schema converts to.
+   *
+   * JSON Schema allows `true` (accepts anything) and `false` (accepts nothing) in place of a schema
+   * object. Neither has a typed equivalent, and ADK Python maps both to an object, so the shape is
+   * kept rather than dropped -- dropping would take the value off the contract while the server
+   * still expects it.
+   */
+  private fun booleanSubSchema(): Schema = Schema(type = Type.OBJECT)
+
+  /**
+   * The `items` an array falls back to when the server declared none, since the backend rejects an
+   * array schema without them and fails every request the agent makes, not just the one tool.
+   */
+  private fun defaultItems(type: Type): Schema? =
+    if (type == Type.ARRAY) Schema(type = Type.STRING) else null
+
+  /** Converts a JSON Schema `properties` map, dropping entries that are not themselves objects. */
+  private fun Map<String, Any>?.toAdkSchemaMap(depth: Int): Map<String, Schema>? =
+    this?.mapNotNull { (key, value) ->
+        if (value is Boolean) key to booleanSubSchema()
+        else value.safeCastToMapStringAny()?.let { key to parsePropertyMap(it, depth) }
+      }
+      ?.toMap()
+
+  /**
+   * Reads the JSON Schema `type` keyword, which is either a single type name or a union of them.
+   *
+   * A `"null"` member is reported as nullability rather than as a type of its own, since that is
+   * how a server marks an argument optional. Whatever real types remain are all returned; the
+   * caller splits a union of two or more into an `anyOf` rather than choosing between them.
+   */
+  private fun Any?.declaredTypes(): DeclaredTypes =
+    when (this) {
+      is String -> DeclaredTypes(listOf(this), nullable = false)
+      is List<*> -> {
+        val names = filterIsInstance<String>()
+        val realNames = names.filter { it != "null" }
+        // Either an empty union or `["null"]`; both are represented faithfully as-is.
+        if (realNames.isEmpty()) DeclaredTypes(listOfNotNull(names.firstOrNull()), nullable = false)
+        else DeclaredTypes(realNames, nullable = realNames.size != names.size)
+      }
+      else -> DeclaredTypes(emptyList(), nullable = false)
+    }
+
+  /** The real (non-`"null"`) members of a JSON Schema `type` keyword, plus whether null is one. */
+  private data class DeclaredTypes(val names: List<String>, val nullable: Boolean)
+
+  /**
+   * The JSON Schema keywords that describe a value of each type.
+   *
+   * Mirrors Python's `related_field_names_by_type`, so a union splits into the same branches ADK
+   * Python produces. ADK's [Schema] has no `maxProperties`/`minProperties`, so those are absent.
+   */
+  private val RELATED_KEYWORDS: Map<String, List<String>> =
+    mapOf(
+      "number" to listOf("description", "enum", "format", "maximum", "minimum", "title"),
+      "integer" to listOf("description", "enum", "format", "maximum", "minimum", "title"),
+      "string" to
+        listOf("description", "enum", "format", "maxLength", "minLength", "pattern", "title"),
+      "object" to listOf("anyOf", "description", "properties", "required", "title"),
+      "array" to listOf("description", "items", "maxItems", "minItems", "title"),
+      "boolean" to listOf("description", "title"),
+    )
+
+  /**
+   * One branch of a split union: this type, plus the keywords from [map] that describe it.
+   *
+   * `default` is deliberately left out -- a union's default cannot be attributed to one branch.
+   */
+  private fun String.branchOf(map: Map<String, Any>): Map<String, Any> = buildMap {
+    put("type", this@branchOf)
+    RELATED_KEYWORDS[this@branchOf]?.forEach { key -> map[key]?.let { put(key, it) } }
+  }
+
+  /**
+   * Converts a JSON Schema `enum` to the ADK representation.
+   *
+   * [Schema.enum] is a list of strings whereas JSON Schema permits any JSON value, so non-string
+   * constants are rendered with `toString()`. JSON `null` members are dropped, since they express
+   * nullability rather than an allowed value.
+   */
+  private fun Any?.toEnumValues(): List<String>? =
+    (this as? List<*>)?.mapNotNull { it?.toString() }?.takeIf { it.isNotEmpty() }
 }
