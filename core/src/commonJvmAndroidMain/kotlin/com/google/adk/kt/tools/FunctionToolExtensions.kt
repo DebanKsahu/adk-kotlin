@@ -19,10 +19,12 @@ package com.google.adk.kt.tools
 import com.google.adk.kt.types.FunctionDeclaration
 import com.google.adk.kt.types.Schema
 import com.google.adk.kt.types.Type
-import com.google.gson.JsonArray
-import com.google.gson.JsonObject
 import java.io.StringWriter
 import kotlin.jvm.JvmName
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import org.kxml2.io.KXmlSerializer
 
 /**
@@ -87,56 +89,49 @@ private fun Iterable<FunctionDeclaration>.toXmlPromptDescription(): String {
   return writer.toString()
 }
 
-private fun Iterable<FunctionDeclaration>.toJsonPromptDescription(): String {
-  val jsonArray = JsonArray()
-  for (declaration in this) {
-    val toolObj = JsonObject()
-    toolObj.addProperty("name", declaration.name)
-    toolObj.addProperty("description", declaration.description)
+private fun Iterable<FunctionDeclaration>.toJsonPromptDescription(): String =
+  JsonArray(
+      map { declaration ->
+        jsonObject { tool ->
+          tool["name"] = JsonPrimitive(declaration.name)
+          tool["description"] = JsonPrimitive(declaration.description)
 
-    val parameters = declaration.parameters
-    if (parameters?.properties?.isNotEmpty() == true) {
-      toolObj.add("parameters", schemaToJsonObject(parameters))
-    }
-    jsonArray.add(toolObj)
-  }
-  return jsonArray.toString()
-}
+          val parameters = declaration.parameters
+          if (parameters?.properties?.isNotEmpty() == true) {
+            tool["parameters"] = schemaToJsonObject(parameters)
+          }
+        }
+      }
+    )
+    .toString()
 
-private fun schemaToJsonObject(schema: Schema): JsonObject {
-  val jsonObj = JsonObject()
-  val typeStr = schema.type?.name?.lowercase() ?: "string"
-  jsonObj.addProperty("type", typeStr)
+/**
+ * Builds a [JsonObject] by filling an ordered map.
+ *
+ * kotlinx's own `buildJsonObject` builder is the usual way to do this, but its `put` returns the
+ * displaced value, and Android Lint's `CheckReturnValue` rejects every discarded return. This
+ * writes the same thing through `MutableMap.set`, which returns nothing to discard.
+ */
+private fun jsonObject(fill: (MutableMap<String, JsonElement>) -> Unit): JsonObject =
+  JsonObject(LinkedHashMap<String, JsonElement>().also(fill))
 
-  if (schema.description != null) {
-    jsonObj.addProperty("description", schema.description)
-  }
+private fun schemaToJsonObject(schema: Schema): JsonObject = jsonObject { fields ->
+  fields["type"] = JsonPrimitive(schema.type?.name?.lowercase() ?: "string")
+  schema.description?.let { fields["description"] = JsonPrimitive(it) }
 
   when (schema.type) {
-    Type.OBJECT -> {
+    Type.OBJECT ->
       if (schema.properties != null) {
-        val propsObj = JsonObject()
-        for ((name, propSchema) in schema.properties) {
-          propsObj.add(name, schemaToJsonObject(propSchema))
+        fields["properties"] = jsonObject { props ->
+          for ((name, propSchema) in schema.properties) props[name] = schemaToJsonObject(propSchema)
         }
-        jsonObj.add("properties", propsObj)
-
-        if (schema.required != null && schema.required.isNotEmpty()) {
-          val reqArray = JsonArray()
-          schema.required.forEach { reqArray.add(it) }
-          jsonObj.add("required", reqArray)
+        if (!schema.required.isNullOrEmpty()) {
+          fields["required"] = JsonArray(schema.required.map { JsonPrimitive(it) })
         }
       }
-    }
-    Type.ARRAY -> {
-      if (schema.items != null) {
-        jsonObj.add("items", schemaToJsonObject(schema.items))
-      }
-    }
+    Type.ARRAY -> schema.items?.let { fields["items"] = schemaToJsonObject(it) }
     else -> {}
   }
-
-  return jsonObj
 }
 
 private fun schemaToXml(schema: Schema, serializer: KXmlSerializer) {
