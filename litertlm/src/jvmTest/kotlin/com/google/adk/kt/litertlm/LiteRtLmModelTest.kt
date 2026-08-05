@@ -35,6 +35,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.kotlin.any
@@ -408,5 +409,72 @@ class LiteRtLmModelTest {
     val expectedJson =
       """{"name":"test_func","description":"Test \"function\"\nwith newlines and \t tabs."}"""
     assertEquals(expectedJson, tool.getToolDescriptionJsonString())
+  }
+
+  @Test
+  fun toMap_untypedUnion_omitsTheTypeKey() {
+    // Emitting "type":"string" beside "anyOf" would contradict the alternatives.
+    val schema = Schema(anyOf = listOf(Schema(type = Type.STRING), Schema(type = Type.INTEGER)))
+
+    val map = schema.toMap()
+
+    assertNull(map["type"])
+    assertEquals(listOf(mapOf("type" to "string"), mapOf("type" to "integer")), map["anyOf"])
+  }
+
+  @Test
+  fun toMap_unspecifiedTypeWithoutAlternatives_fallsBackToString() {
+    // Nothing describes this schema, and unlike the union case there are no alternatives to speak
+    // for it, so the description keeps the `string` fallback rather than omitting the type.
+    val schema = Schema(type = Type.TYPE_UNSPECIFIED)
+
+    assertEquals("string", schema.toMap()["type"])
+  }
+
+  @Test
+  fun toMap_unspecifiedTypeWithAlternatives_omitsTheTypeKey() {
+    // A union spelled with an explicit TYPE_UNSPECIFIED rather than a missing type, which is what
+    // the MCP converter produces. The `string` fallback must not apply, or the description would
+    // name a type right next to the alternatives that contradict it.
+    val schema = Schema(type = Type.TYPE_UNSPECIFIED, anyOf = listOf(Schema(type = Type.STRING)))
+
+    assertNull(schema.toMap()["type"])
+  }
+
+  @Test
+  fun toMap_constraintFields_areEmitted() {
+    // The tool description is plain JSON, so it can carry every constraint a schema expresses.
+    val schema =
+      Schema(
+        type = Type.INTEGER,
+        format = "int32",
+        nullable = true,
+        default = 5,
+        title = "Count",
+        pattern = "^[a-z]+$",
+        minimum = 1.0,
+        maximum = 10.0,
+        minLength = 2,
+        maxLength = 8,
+        minItems = 1,
+        maxItems = 3,
+        anyOf = listOf(Schema(type = Type.STRING)),
+      )
+
+    val map = schema.toMap()
+
+    assertEquals("integer", map["type"])
+    assertEquals("int32", map["format"])
+    assertEquals(true, map["nullable"])
+    assertEquals(5, map["default"])
+    assertEquals("Count", map["title"])
+    assertEquals("^[a-z]+$", map["pattern"])
+    assertEquals(1.0, map["minimum"])
+    assertEquals(10.0, map["maximum"])
+    assertEquals(2L, map["minLength"])
+    assertEquals(8L, map["maxLength"])
+    assertEquals(1L, map["minItems"])
+    assertEquals(3L, map["maxItems"])
+    assertEquals(listOf(mapOf("type" to "string")), map["anyOf"])
   }
 }

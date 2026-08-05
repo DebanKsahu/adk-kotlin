@@ -471,4 +471,73 @@ class FirebaseIntegrationTest {
     assertThat(text).isNotEmpty()
     assertThat(text).contains(magicTemperatureCelsius.toString())
   }
+
+  @Test
+  fun runAsync_toolTakingAFreeFormObject_isAcceptedByTheBackend(): Unit = runBlocking {
+    // `{"type": "object"}` with no properties is how a free-form argument is declared, and it is
+    // what an MCP server sends for one. It cannot go out as an object: the backend rejects
+    // `{"type":"OBJECT","properties":{}}` with "should be non-empty for OBJECT type" and fails the
+    // whole request, every other tool declaration in it included. The converter turns it into a
+    // string that says it carries JSON, and this is the test that the backend accepts that.
+    val recordToolName = "record_metadata"
+    var capturedMetadata: Any? = null
+
+    val recordTool =
+      object :
+        FunctionTool(name = recordToolName, description = "Records a free-form metadata object.") {
+        override fun declaration(): FunctionDeclaration =
+          FunctionDeclaration(
+            name = name,
+            description = description,
+            parameters =
+              Schema(
+                type = Type.OBJECT,
+                properties =
+                  mapOf(
+                    // No properties of its own: the shape under test.
+                    "metadata" to
+                      Schema(type = Type.OBJECT, description = "Any key-value pairs to record.")
+                  ),
+                required = listOf("metadata"),
+              ),
+          )
+
+        override suspend fun execute(context: ToolContext, args: Map<String, Any>): Any {
+          capturedMetadata = args["metadata"]
+          log.info { "Tool invoked with metadata=$capturedMetadata" }
+          return mapOf("recorded" to true)
+        }
+      }
+
+    val recordAgent =
+      LlmAgent(
+        name = "recordAgent",
+        model = firebaseModel,
+        instruction =
+          Instruction(text = "You are a helpful assistant. Use the available tools when asked."),
+        tools = listOf(recordTool),
+      )
+    val recordRunner = InMemoryRunner(recordAgent, appName = "integration tests")
+
+    val question = "Record metadata with colour blue and priority 1. Use the available tool."
+    log.info { "Sending user question: $question" }
+
+    val events =
+      recordRunner
+        .runAsync(
+          "test_user",
+          "test_session",
+          newMessage = Content.fromText(role = "user", text = question),
+        )
+        .toList()
+
+    logEvents(events)
+    assertThat(events).isNotEmpty()
+
+    // The declaration itself is what is under test: a rejected one fails the whole turn with
+    // "should be non-empty for OBJECT type" before the model ever runs.
+    assertThat(modelErrors(events)).isEmpty()
+    assertThat(events.flatMap { it.functionCalls() }.map { it.name }).contains(recordToolName)
+    assertThat(capturedMetadata).isNotNull()
+  }
 }

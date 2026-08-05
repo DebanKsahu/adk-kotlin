@@ -642,6 +642,317 @@ class ConversionsTest {
   }
 
   @Test
+  fun toFirebaseSchema_nullSchema_returnsNullableString() {
+    val conversions = Conversions()
+
+    val actualSchema =
+      conversions.toFirebaseSchema(Schema(type = Type.NULL, description = "always null"))
+
+    assertThat(actualSchema.type).isEqualTo("STRING")
+    assertThat(actualSchema.nullable).isTrue()
+  }
+
+  @Test
+  fun unsupportedConstraints_formatOnANumber_isReported() {
+    // Firebase takes a `format` on a string but has no parameter for one on a number, so `int32`
+    // -- the only numeric format the backend accepts -- would otherwise vanish silently.
+    val conversions = Conversions()
+
+    val dropped = conversions.unsupportedConstraints(Schema(type = Type.INTEGER, format = "int32"))
+
+    assertThat(dropped).contains("format")
+  }
+
+  @Test
+  fun unsupportedConstraints_formatOnAString_isNotReported() {
+    val conversions = Conversions()
+
+    val dropped =
+      conversions.unsupportedConstraints(Schema(type = Type.STRING, format = "date-time"))
+
+    assertThat(dropped).isEmpty()
+  }
+
+  @Test
+  fun unsupportedConstraints_boundsOnTheWrongType_areReported() {
+    val conversions = Conversions()
+
+    val dropped =
+      conversions.unsupportedConstraints(
+        Schema(type = Type.STRING, minimum = 1.0, maxItems = 3, pattern = "^a$")
+      )
+
+    assertThat(dropped).containsAtLeast("minimum", "maxItems", "pattern")
+  }
+
+  @Test
+  fun unsupportedConstraints_boundsOnTheirOwnType_areNotReported() {
+    val conversions = Conversions()
+
+    val dropped =
+      conversions.unsupportedConstraints(Schema(type = Type.INTEGER, minimum = 1.0, maximum = 9.0))
+
+    assertThat(dropped).isEmpty()
+  }
+
+  @Test
+  fun unsupportedConstraints_untypedUnion_reportsWhatTheUnionCannotCarry() {
+    // Firebase builds a union from its alternatives alone, so anything it declares about itself
+    // has nowhere to go.
+    val conversions = Conversions()
+
+    val dropped =
+      conversions.unsupportedConstraints(
+        Schema(
+          anyOf = listOf(Schema(type = Type.STRING)),
+          description = "an id",
+          title = "Id",
+          nullable = true,
+        )
+      )
+
+    assertThat(dropped).containsAtLeast("description", "title", "nullable")
+  }
+
+  @Test
+  fun toFirebaseSchema_arrayBoundsPastIntRange_areClamped() {
+    val conversions = Conversions()
+
+    val actual =
+      conversions.toFirebaseSchema(
+        Schema(type = Type.ARRAY, items = Schema(type = Type.STRING), maxItems = 5_000_000_000L)
+      )
+
+    assertThat(actual.maxItems).isEqualTo(Int.MAX_VALUE)
+  }
+
+  @Test
+  fun toFirebaseSchema_objectWithoutProperties_becomesAJsonCarryingString() {
+    // `{"type": "object"}` with no properties is how a free-form argument is declared. It used to
+    // throw; it must not become `{"type":"OBJECT","properties":{}}` either, because the backend
+    // rejects that with "should be non-empty for OBJECT type" and fails the entire request.
+    val conversions = Conversions()
+
+    val actualSchema = conversions.toFirebaseSchema(Schema(type = Type.OBJECT, description = "Any"))
+
+    assertThat(actualSchema.type).isEqualTo("STRING")
+    assertThat(actualSchema.description).isEqualTo("Any A JSON object, serialized as a string.")
+  }
+
+  @Test
+  fun toFirebaseSchema_arrayWithoutItems_defaultsItemsToString() {
+    val conversions = Conversions()
+
+    val actualSchema = conversions.toFirebaseSchema(Schema(type = Type.ARRAY))
+
+    assertThat(actualSchema.type).isEqualTo("ARRAY")
+    assertThat(actualSchema.items?.type).isEqualTo("STRING")
+  }
+
+  @Test
+  fun toFirebaseSchema_anyOfWithoutType_returnsUnion() {
+    // A union carries no type of its own, which used to reach the unsupported-type branch and
+    // throw.
+    val conversions = Conversions()
+
+    val actualSchema =
+      conversions.toFirebaseSchema(
+        Schema(anyOf = listOf(Schema(type = Type.STRING), Schema(type = Type.INTEGER)))
+      )
+
+    assertThat(actualSchema.anyOf).hasSize(2)
+    assertThat(actualSchema.anyOf?.map { it.type }).containsExactly("STRING", "INTEGER")
+  }
+
+  @Test
+  fun toFirebaseSchema_untypedSchema_becomesAJsonCarryingString() {
+    // Nothing describes this schema, which is the same open shape as an object with no properties,
+    // so it takes the same escape route rather than an empty OBJECT the backend would reject.
+    val conversions = Conversions()
+
+    val actualSchema = conversions.toFirebaseSchema(Schema(type = Type.TYPE_UNSPECIFIED))
+
+    assertThat(actualSchema.type).isEqualTo("STRING")
+  }
+
+  @Test
+  fun toFirebaseSchema_untypedSchemaWithProperties_staysAnObject() {
+    // The properties are the only description this schema has, so they are worth keeping -- and a
+    // non-empty OBJECT is a shape the backend accepts.
+    val conversions = Conversions()
+
+    val actualSchema =
+      conversions.toFirebaseSchema(Schema(properties = mapOf("name" to Schema(type = Type.STRING))))
+
+    assertThat(actualSchema.type).isEqualTo("OBJECT")
+    assertThat(actualSchema.properties).containsKey("name")
+  }
+
+  @Test
+  fun unsupportedConstraints_structureFieldsOnAUnion_areReported() {
+    // A union is built from its alternatives alone, so anything describing a structure beside it
+    // is dropped. Nothing said so, which is the one branch the report was missing.
+    val conversions = Conversions()
+
+    val unsupported =
+      conversions.unsupportedConstraints(
+        Schema(
+          anyOf = listOf(Schema(type = Type.STRING)),
+          properties = mapOf("a" to Schema(type = Type.STRING)),
+          items = Schema(type = Type.STRING),
+          required = listOf("a"),
+        )
+      )
+
+    assertThat(unsupported).containsAtLeast("properties", "items", "required")
+  }
+
+  @Test
+  fun unsupportedConstraints_boundsOnAnEnumeratedInteger_areReported() {
+    // `FirebaseSchema.enumeration` takes only values, description, nullability and title, so a
+    // bound declared beside an enum is lost however well the type would have carried it. This is
+    // the shape GenAI's own `Schema.enum` KDoc uses: apartment numbers as enumerated integers.
+    val conversions = Conversions()
+
+    val unsupported =
+      conversions.unsupportedConstraints(
+        Schema(type = Type.INTEGER, enum = listOf("101", "201"), minimum = 100.0)
+      )
+
+    assertThat(unsupported).contains("minimum")
+  }
+
+  @Test
+  fun unsupportedConstraints_enumFormat_isNotReported() {
+    // `enumeration` sets `format = "enum"` itself, so that one spelling survives and reporting it
+    // would be a false alarm.
+    val conversions = Conversions()
+
+    val unsupported =
+      conversions.unsupportedConstraints(
+        Schema(type = Type.STRING, format = "enum", enum = listOf("east", "west"))
+      )
+
+    assertThat(unsupported).doesNotContain("format")
+  }
+
+  @Test
+  fun unsupportedConstraints_anotherFormatOnAnEnum_isReported() {
+    val conversions = Conversions()
+
+    val unsupported =
+      conversions.unsupportedConstraints(
+        Schema(type = Type.STRING, format = "date-time", enum = listOf("east", "west"))
+      )
+
+    assertThat(unsupported).contains("format")
+  }
+
+  @Test
+  fun substitutesStringForEnumType_enumOnAnInteger_reportsTheSubstitution() {
+    // The bounds are not the only loss: the declared INTEGER reaches the model as a string.
+    val conversions = Conversions()
+
+    val substitutes =
+      conversions.substitutesStringForEnumType(
+        Schema(type = Type.INTEGER, enum = listOf("101", "201"))
+      )
+
+    assertThat(substitutes).isTrue()
+  }
+
+  @Test
+  fun substitutesStringForEnumType_enumOnAString_reportsNothing() {
+    val conversions = Conversions()
+
+    val substitutes =
+      conversions.substitutesStringForEnumType(
+        Schema(type = Type.STRING, enum = listOf("east", "west"))
+      )
+
+    assertThat(substitutes).isFalse()
+  }
+
+  @Test
+  fun dropsUnionForItsType_typeDeclaredBesideAnyOf_dropsTheUnion() {
+    // Firebase holds a type or a union, never both, so a schema declaring both resolves to the
+    // type. Asserted on the decision rather than on the conversion, because the conversion warns
+    // and the Android logging sink is a stub here.
+    val conversions = Conversions()
+
+    val drops =
+      conversions.dropsUnionForItsType(
+        Schema(type = Type.STRING, anyOf = listOf(Schema(type = Type.INTEGER)))
+      )
+
+    assertThat(drops).isTrue()
+  }
+
+  @Test
+  fun dropsUnionForItsType_untypedUnion_keepsTheUnion() {
+    val conversions = Conversions()
+
+    val drops =
+      conversions.dropsUnionForItsType(Schema(anyOf = listOf(Schema(type = Type.INTEGER))))
+
+    assertThat(drops).isFalse()
+  }
+
+  @Test
+  fun toFirebaseSchema_constraintFields_reachTheFirebaseSchema() {
+    val conversions = Conversions()
+
+    val actualSchema =
+      conversions.toFirebaseSchema(
+        Schema(
+          type = Type.INTEGER,
+          description = "a bounded integer",
+          nullable = true,
+          title = "Count",
+          minimum = 1.0,
+          maximum = 10.0,
+        )
+      )
+
+    assertThat(actualSchema.type).isEqualTo("INTEGER")
+    assertThat(actualSchema.nullable).isTrue()
+    assertThat(actualSchema.title).isEqualTo("Count")
+    assertThat(actualSchema.minimum).isEqualTo(1.0)
+    assertThat(actualSchema.maximum).isEqualTo(10.0)
+  }
+
+  @Test
+  fun toFirebaseSchema_arrayBounds_reachTheFirebaseSchema() {
+    val conversions = Conversions()
+
+    val actualSchema =
+      conversions.toFirebaseSchema(
+        Schema(
+          type = Type.ARRAY,
+          items = Schema(type = Type.STRING),
+          title = "Tags",
+          minItems = 1,
+          maxItems = 5,
+        )
+      )
+
+    assertThat(actualSchema.type).isEqualTo("ARRAY")
+    assertThat(actualSchema.title).isEqualTo("Tags")
+    assertThat(actualSchema.minItems).isEqualTo(1)
+    assertThat(actualSchema.maxItems).isEqualTo(5)
+  }
+
+  @Test
+  fun toFirebaseSchema_stringFormat_reachesTheFirebaseSchema() {
+    val conversions = Conversions()
+
+    val actualSchema =
+      conversions.toFirebaseSchema(Schema(type = Type.STRING, format = "date-time"))
+
+    assertThat(actualSchema.format).isEqualTo("date-time")
+  }
+
+  @Test
   fun toFirebaseSchema_numberSchema_returnsSchema() {
     val conversions = Conversions()
 

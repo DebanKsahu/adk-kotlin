@@ -58,6 +58,7 @@ import com.google.firebase.ai.type.PublicPreviewAPI
 import com.google.firebase.ai.type.RequestOptions
 import com.google.firebase.ai.type.SafetySetting
 import com.google.firebase.ai.type.Schema as FirebaseSchema
+import com.google.firebase.ai.type.StringFormat
 import com.google.firebase.ai.type.TextPart
 import com.google.firebase.ai.type.ThinkingConfig as FirebaseThinkingConfig
 import com.google.firebase.ai.type.ThinkingLevel as FirebaseThinkingLevel
@@ -452,6 +453,19 @@ internal class Conversions {
     functionDeclaration: FunctionDeclaration
   ): FirebaseFunctionDeclaration =
     with(functionDeclaration) {
+      // Firebase describes a declaration's parameters as a map of named properties, so only the
+      // properties are converted and the schema around them is not. A top-level union, or an
+      // object left open with no properties, therefore reaches the model as a tool taking no
+      // arguments at all. There is no field to put either one in, so this is reported rather than
+      // fixed. An empty property map is not the same thing: that tool really does take none.
+      parameters?.let { params ->
+        if (params.anyOf != null || params.properties == null) {
+          logger.warn {
+            "Function declaration parameters are a schema Firebase cannot express as named " +
+              "properties, so the tool is advertised without parameters: $name"
+          }
+        }
+      }
       FirebaseFunctionDeclaration(
         name = name,
         description = description,
@@ -462,41 +476,239 @@ internal class Conversions {
 
   fun toFirebaseSchema(schema: Schema): FirebaseSchema =
     with(schema) {
+      // Firebase models a union as a schema that carries only `anyOf`, so a typed schema cannot
+      // hold one as well. An untyped union is the shape a server sends, and reaching the `when`
+      // below with no type would throw, so it is handled first.
+      warnUnsupportedConstraints(this)
+      if (dropsUnionForItsType(this)) {
+        logger.warn {
+          "Schema declares both a type ($type) and anyOf; Firebase holds one or the other, so the " +
+            "union is dropped in favour of the type"
+        }
+      }
+      if (substitutesStringForEnumType(this)) {
+        logger.warn {
+          "Schema declares an enum on type $type; Firebase describes every enum as a string, so " +
+            "the declared type is not what reaches the model"
+        }
+      }
+
+      val isNullable = nullable == true
+      val localAnyOf = anyOf
       val localEnum = enum
-      if (localEnum != null) {
-        FirebaseSchema.enumeration(values = localEnum, description = description)
-      } else {
-        when (this.type) {
-          Type.OBJECT -> {
-            val nonNullProps =
-              requireNotNull(properties) {
-                "Object properties schema is null"
-              } // TODO: check if properties can be null when type is object
-            FirebaseSchema.obj(
-              properties = nonNullProps.mapValues { toFirebaseSchema(it.value) },
-              description = description,
-              optionalProperties = optionalParameters(this),
-            )
-          }
+      // The same three branches [firebaseBranch] names, in the same order.
+      when {
+        localAnyOf != null && firebaseBranch() == FirebaseBranch.UNION ->
+          FirebaseSchema.anyOf(schemas = localAnyOf.map { toFirebaseSchema(it) })
+        localEnum != null ->
+          FirebaseSchema.enumeration(
+            values = localEnum,
+            description = description,
+            nullable = isNullable,
+            title = title,
+          )
+        else ->
+          when (this.type) {
+            // A schema with no declared type constrains nothing, which is the same open shape as
+            // an object that declares no properties, so the two convert identically. Either way
+            // the properties are the only description there is: with them it is an object, and
+            // without them there is nothing for Firebase to hold but the free-form string.
+            Type.OBJECT,
+            Type.TYPE_UNSPECIFIED,
+            null -> {
+              val declaredProps = properties
+              if (declaredProps.isNullOrEmpty()) {
+                freeFormObject(description, isNullable, title)
+              } else {
+                FirebaseSchema.obj(
+                  properties = declaredProps.mapValues { toFirebaseSchema(it.value) },
+                  description = description,
+                  optionalProperties = optionalParameters(this),
+                  nullable = isNullable,
+                  title = title,
+                )
+              }
+            }
 
-          Type.ARRAY -> {
-            val nonNullItems =
-              requireNotNull(items) {
-                "Array items schema is null"
-              } // TODO: check if items can be null when type is array
-            FirebaseSchema.array(items = toFirebaseSchema(nonNullItems), description = description)
-          }
+            Type.ARRAY -> {
+              // Firebase has no untyped array, and an array whose items nothing describes is
+              // still a list of something, so a string is the least wrong guess available here.
+              val nonNullItems = items ?: Schema(type = Type.STRING)
+              FirebaseSchema.array(
+                items = toFirebaseSchema(nonNullItems),
+                description = description,
+                nullable = isNullable,
+                title = title,
+                // Firebase counts items in `Int` where the JSON Schema bound is a `Long`, so a
+                // bound past `Int.MAX_VALUE` is clamped rather than silently wrapped negative.
+                minItems = minItems?.coerceIn(0, Int.MAX_VALUE.toLong())?.toInt(),
+                maxItems = maxItems?.coerceIn(0, Int.MAX_VALUE.toLong())?.toInt(),
+              )
+            }
 
-          Type.STRING -> FirebaseSchema.string(description = description)
-          Type.INTEGER -> FirebaseSchema.long(description = description)
-          Type.NUMBER -> FirebaseSchema.double(description = description)
-          Type.BOOLEAN -> FirebaseSchema.boolean(description = description)
-          Type.NULL,
-          Type.TYPE_UNSPECIFIED,
-          null -> throw IllegalArgumentException("Unsupported schema type: ${this.type}")
+            Type.STRING ->
+              FirebaseSchema.string(
+                description = description,
+                nullable = isNullable,
+                format = format?.let { StringFormat.Custom(it) },
+                title = title,
+              )
+            Type.INTEGER ->
+              FirebaseSchema.long(
+                description = description,
+                nullable = isNullable,
+                title = title,
+                minimum = minimum,
+                maximum = maximum,
+              )
+            Type.NUMBER ->
+              FirebaseSchema.double(
+                description = description,
+                nullable = isNullable,
+                title = title,
+                minimum = minimum,
+                maximum = maximum,
+              )
+            Type.BOOLEAN ->
+              FirebaseSchema.boolean(
+                description = description,
+                nullable = isNullable,
+                title = title,
+              )
+            // Firebase has no null-typed schema and its `nullable` is only a modifier on a real
+            // type, so a nullable string is the closest this backend expresses. Handled here so
+            // every `Type` a caller can construct converts, rather than only the ones in use today.
+            Type.NULL ->
+              FirebaseSchema.string(description = description, nullable = true, title = title)
+          }
+      }
+    }
+
+  /**
+   * How an object nothing describes is handed to the model: a string carrying JSON.
+   *
+   * It cannot go out as an object. The backend rejects `{"type":"OBJECT","properties":{}}` with
+   * `should be non-empty for OBJECT type` and fails the whole request -- every other tool
+   * declaration in it included -- so a local shape that used to throw would become a remote 400. A
+   * string is the shape that survives, and it is what [Type.NULL] and an array with no `items`
+   * already fall back to. The description tells the model to fill it with JSON, since nothing else
+   * now says the value is structured.
+   */
+  private fun freeFormObject(
+    description: String?,
+    nullable: Boolean,
+    title: String?,
+  ): FirebaseSchema =
+    FirebaseSchema.string(
+      description =
+        listOfNotNull(description, "A JSON object, serialized as a string.").joinToString(" "),
+      nullable = nullable,
+      title = title,
+    )
+
+  /**
+   * The shape a [Schema] converts to, in the order [toFirebaseSchema] tries them.
+   *
+   * Deciding it in one place is what keeps the conversion and [unsupportedConstraints] from
+   * disagreeing about which fields a schema will actually carry.
+   */
+  private enum class FirebaseBranch {
+    /** An `anyOf` with no type beside it: built from its alternatives alone. */
+    UNION,
+    /** An `enum`: always a string with `format = "enum"`, whatever type was declared. */
+    ENUMERATION,
+    /** Everything else: a branch chosen by [Schema.type]. */
+    TYPED,
+  }
+
+  private fun Schema.firebaseBranch(): FirebaseBranch =
+    when {
+      anyOf != null && (type == null || type == Type.TYPE_UNSPECIFIED) -> FirebaseBranch.UNION
+      enum != null -> FirebaseBranch.ENUMERATION
+      else -> FirebaseBranch.TYPED
+    }
+
+  /**
+   * Whether Firebase drops this schema's `anyOf` because a type is declared beside it.
+   *
+   * Firebase holds a type or a union, never both, so one of them has to give way and the type wins.
+   * Pure so it can be asserted directly -- the logging sink is an Android stub in unit tests, which
+   * puts the warning itself out of reach.
+   */
+  internal fun dropsUnionForItsType(schema: Schema): Boolean =
+    schema.anyOf != null && schema.firebaseBranch() != FirebaseBranch.UNION
+
+  /**
+   * Whether Firebase describes this schema as a string because it carries an `enum`.
+   *
+   * `FirebaseSchema.enumeration` always builds a string with `format = "enum"`, so an enum declared
+   * on any other type does not reach the model as that type. Pure so it can be asserted directly.
+   */
+  internal fun substitutesStringForEnumType(schema: Schema): Boolean =
+    schema.firebaseBranch() == FirebaseBranch.ENUMERATION &&
+      schema.type != null &&
+      schema.type != Type.STRING &&
+      schema.type != Type.TYPE_UNSPECIFIED
+
+  /**
+   * The constraints this schema declares that Firebase will not carry.
+   *
+   * Which fields survive depends on the branch a schema takes, not just on the field: `format`
+   * reaches a string but has no parameter on a number, an enumeration carries only its values, and
+   * the numeric and array bounds only exist on their own types. Pure so it can be asserted directly
+   * -- the logging sink is an Android stub in unit tests.
+   */
+  internal fun unsupportedConstraints(schema: Schema): List<String> =
+    with(schema) {
+      val branch = firebaseBranch()
+      val isTyped = branch == FirebaseBranch.TYPED
+      buildList {
+        // A union is built from its alternatives alone, so nothing it declares about itself lands.
+        if (branch == FirebaseBranch.UNION) {
+          description?.let { add("description") }
+          title?.let { add("title") }
+          nullable?.let { add("nullable") }
+          enum?.let { add("enum") }
+        }
+        // Neither a union nor an enumeration is built from the fields that describe a structure:
+        // the first is built from its alternatives, the second from its values. A typed schema is
+        // the only one that can carry them.
+        if (!isTyped) {
+          properties?.let { add("properties") }
+          items?.let { add("items") }
+          required?.let { add("required") }
+        }
+        default?.let { add("default") }
+        pattern?.let { add("pattern") }
+        minLength?.let { add("minLength") }
+        maxLength?.let { add("maxLength") }
+        // A string branch has a `format` parameter, and an enumeration fixes its own to "enum"; any
+        // other spelling is lost.
+        val formatSurvives =
+          when (branch) {
+            FirebaseBranch.UNION -> false
+            FirebaseBranch.ENUMERATION -> format == "enum"
+            FirebaseBranch.TYPED -> type == Type.STRING
+          }
+        if (format != null && !formatSurvives) add("format")
+        // The numeric bounds only exist on the integer and number branches...
+        if (!isTyped || (type != Type.INTEGER && type != Type.NUMBER)) {
+          minimum?.let { add("minimum") }
+          maximum?.let { add("maximum") }
+        }
+        // ...and the item bounds only on the array branch.
+        if (!isTyped || type != Type.ARRAY) {
+          minItems?.let { add("minItems") }
+          maxItems?.let { add("maxItems") }
         }
       }
     }
+
+  /** Warns about the constraints Firebase has no field for, so they are not dropped silently. */
+  private fun warnUnsupportedConstraints(schema: Schema) {
+    val unsupported = unsupportedConstraints(schema).takeIf { it.isNotEmpty() } ?: return
+    logger.warn { "Schema constraints are not supported in Firebase: $unsupported" }
+  }
 
   inner class RequestConverter(val request: LlmRequest) {
 

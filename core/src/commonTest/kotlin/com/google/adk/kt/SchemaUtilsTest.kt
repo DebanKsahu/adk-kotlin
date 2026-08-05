@@ -46,6 +46,322 @@ class SchemaUtilsTest {
   }
 
   @Test
+  fun validateMapOnSchema_nullValueForNullableProperty_returnsSuccess() {
+    val schema =
+      Schema(
+        type = Type.OBJECT,
+        properties = mapOf("note" to Schema(type = Type.STRING, nullable = true)),
+        required = listOf("note"),
+      )
+
+    val result = SchemaUtils.validateMapOnSchema(mapOf("note" to null), schema, "Input")
+
+    assertTrue(result.isSuccess)
+  }
+
+  @Test
+  fun validateMapOnSchema_nullValueForNonNullableProperty_returnsFailure() {
+    val schema =
+      Schema(
+        type = Type.OBJECT,
+        properties = mapOf("note" to Schema(type = Type.STRING)),
+        required = listOf("note"),
+      )
+
+    val result = SchemaUtils.validateMapOnSchema(mapOf("note" to null), schema, "Input")
+
+    assertTrue(result.isFailure)
+  }
+
+  @Test
+  fun validateMapOnSchema_wrongTypeForNullableProperty_returnsFailure() {
+    // `nullable` widens the property to accept null, not to accept anything.
+    val schema =
+      Schema(
+        type = Type.OBJECT,
+        properties = mapOf("note" to Schema(type = Type.STRING, nullable = true)),
+        required = listOf("note"),
+      )
+
+    val result = SchemaUtils.validateMapOnSchema(mapOf("note" to 42), schema, "Input")
+
+    assertTrue(result.isFailure)
+  }
+
+  @Test
+  fun validateMapOnSchema_valueMatchingAnyOfMember_returnsSuccess() {
+    val schema =
+      Schema(
+        type = Type.OBJECT,
+        properties =
+          mapOf(
+            "id" to Schema(anyOf = listOf(Schema(type = Type.STRING), Schema(type = Type.INTEGER)))
+          ),
+        required = listOf("id"),
+      )
+
+    val result = SchemaUtils.validateMapOnSchema(mapOf("id" to 7), schema, "Input")
+
+    assertTrue(result.isSuccess)
+  }
+
+  @Test
+  fun validateMapOnSchema_valueMatchingNoAnyOfMember_returnsFailure() {
+    // A schema carrying only `anyOf` has no type, which must not be read as "no constraint".
+    val schema =
+      Schema(
+        type = Type.OBJECT,
+        properties =
+          mapOf(
+            "id" to Schema(anyOf = listOf(Schema(type = Type.STRING), Schema(type = Type.INTEGER)))
+          ),
+        required = listOf("id"),
+      )
+
+    val result = SchemaUtils.validateMapOnSchema(mapOf("id" to true), schema, "Input")
+
+    assertTrue(result.isFailure)
+  }
+
+  @Test
+  fun validateMapOnSchema_topLevelAnyOf_matchesOneAlternative() {
+    val schema =
+      Schema(
+        anyOf =
+          listOf(
+            Schema(type = Type.OBJECT, properties = mapOf("a" to Schema(type = Type.STRING))),
+            Schema(type = Type.OBJECT, properties = mapOf("b" to Schema(type = Type.INTEGER))),
+          )
+      )
+
+    val result = SchemaUtils.validateMapOnSchema(mapOf("b" to 1), schema, "Input")
+
+    assertTrue(result.isSuccess)
+  }
+
+  @Test
+  fun validateMapOnSchema_topLevelAnyOf_matchingNoAlternative_returnsFailure() {
+    val schema =
+      Schema(
+        anyOf =
+          listOf(Schema(type = Type.OBJECT, properties = mapOf("a" to Schema(type = Type.STRING))))
+      )
+
+    val result = SchemaUtils.validateMapOnSchema(mapOf("zzz" to 1), schema, "Input")
+
+    assertTrue(result.isFailure)
+  }
+
+  @Test
+  fun validateMapOnSchema_anyOfBesideProperties_stillChecksTheUnion() {
+    // A schema does not stop meaning what its `anyOf` says because it also declares properties.
+    // The same schema reached as a nested property has its union enforced, so the root must agree.
+    val schema =
+      Schema(
+        type = Type.OBJECT,
+        properties = mapOf("a" to Schema(type = Type.STRING)),
+        anyOf =
+          listOf(Schema(type = Type.OBJECT, properties = mapOf("b" to Schema(type = Type.INTEGER)))),
+      )
+
+    val result = SchemaUtils.validateMapOnSchema(mapOf("a" to "x"), schema, "Input")
+
+    assertTrue(result.isFailure)
+  }
+
+  @Test
+  fun validateMapOnSchema_unionsThatMultiplyOut_giveUpInsteadOfHanging() {
+    // Each level reuses the same child on both branches, so 24 objects describe 16 million
+    // combinations. Trying them all takes minutes, so validation stops and says why.
+    var nested = Schema(type = Type.STRING)
+    repeat(24) { nested = Schema(anyOf = listOf(nested, nested)) }
+    val schema = Schema(type = Type.OBJECT, properties = mapOf("x" to nested))
+
+    // A value that matches nothing is what forces every branch to be tried.
+    val result = SchemaUtils.validateMapOnSchema(mapOf("x" to 42), schema, "Input")
+
+    assertTrue(result.isFailure)
+    assertTrue(
+      result.exceptionOrNull()?.message?.contains("too complex to validate") == true,
+      "expected the budget message, got: ${result.exceptionOrNull()?.message}",
+    )
+  }
+
+  @Test
+  fun validateMapOnSchema_deeplyNestedUnionsThatMatch_stillValidate() {
+    // The same depth, but one branch matches at every level, so the search stops early and the
+    // budget is never close to spent. Depth alone must not be what fails a schema.
+    var nested = Schema(type = Type.STRING)
+    repeat(24) { nested = Schema(anyOf = listOf(nested, Schema(type = Type.BOOLEAN))) }
+    val schema = Schema(type = Type.OBJECT, properties = mapOf("x" to nested))
+
+    assertTrue(SchemaUtils.validateMapOnSchema(mapOf("x" to "hello"), schema, "Input").isSuccess)
+  }
+
+  @Test
+  fun validateMapOnSchema_anyOfOfRequiredOnlyMembers_acceptsEitherKey() {
+    // The ordinary way to write "at least one of these". Each alternative names a required key and
+    // nothing else, so it adds a rule to the schema around it rather than replacing its key list.
+    val schema =
+      Schema(
+        type = Type.OBJECT,
+        properties = mapOf("a" to Schema(type = Type.STRING), "b" to Schema(type = Type.STRING)),
+        anyOf = listOf(Schema(required = listOf("a")), Schema(required = listOf("b"))),
+      )
+
+    assertTrue(SchemaUtils.validateMapOnSchema(mapOf("a" to "x"), schema, "Input").isSuccess)
+    assertTrue(SchemaUtils.validateMapOnSchema(mapOf("b" to "y"), schema, "Input").isSuccess)
+    // Neither alternative is satisfied, so the map is still rejected.
+    assertTrue(SchemaUtils.validateMapOnSchema(emptyMap(), schema, "Input").isFailure)
+  }
+
+  @Test
+  fun validateMapOnSchema_topLevelAnyOf_stillChecksRequired() {
+    // The union branch used to return before the required check, so a `required` declared beside
+    // an `anyOf` went unenforced.
+    val schema =
+      Schema(
+        anyOf =
+          listOf(Schema(type = Type.OBJECT, properties = mapOf("a" to Schema(type = Type.STRING)))),
+        required = listOf("b"),
+      )
+
+    val result = SchemaUtils.validateMapOnSchema(mapOf("a" to "x"), schema, "Input")
+
+    assertTrue(result.isFailure)
+  }
+
+  @Test
+  fun validateMapOnSchema_objectWithoutDeclaredProperties_acceptsAnyKeys() {
+    // `{"type": "object"}` with no properties is how a free-form argument is spelled. The Firebase
+    // converter advertises it as an argument the model may fill, so rejecting whatever comes back
+    // would contradict the declaration the model was given.
+    val schema =
+      Schema(type = Type.OBJECT, properties = mapOf("meta" to Schema(type = Type.OBJECT)))
+
+    val result = SchemaUtils.validateMapOnSchema(mapOf("meta" to mapOf("a" to 1)), schema, "Input")
+
+    assertTrue(result.isSuccess, "got: ${result.exceptionOrNull()?.message}")
+  }
+
+  @Test
+  fun validateMapOnSchema_objectWithEmptyProperties_stillRejectsUnknownKeys() {
+    // An empty property map is a different statement from an absent one: this schema does say that
+    // no key is allowed, and that is still enforced.
+    val schema = Schema(type = Type.OBJECT, properties = emptyMap())
+
+    assertTrue(SchemaUtils.validateMapOnSchema(mapOf("a" to 1), schema, "Input").isFailure)
+  }
+
+  @Test
+  fun validateMapOnSchema_nestedObjectWithUnion_stillEnforcesTheUnion() {
+    // `matchType` no longer reads a union when the schema is an object, because the walk it defers
+    // to reads the same one. This is the test that the walk it defers to actually happens.
+    val inner =
+      Schema(
+        type = Type.OBJECT,
+        properties = mapOf("a" to Schema(type = Type.STRING)),
+        anyOf = listOf(Schema(required = listOf("b"))),
+      )
+    val schema = Schema(type = Type.OBJECT, properties = mapOf("x" to inner))
+
+    // The only alternative requires "b", which is absent.
+    val result = SchemaUtils.validateMapOnSchema(mapOf("x" to mapOf("a" to "v")), schema, "Input")
+
+    assertTrue(result.isFailure)
+  }
+
+  @Test
+  fun validateMapOnSchema_nestedObjectUnion_isNotWalkedTwice() {
+    // An object hands its whole schema on to `validateMapOnSchema`, which reads the union again.
+    // Reading it in `matchType` as well spent the budget twice over, so a union comfortably inside
+    // the limit came back as "too complex". Only the last alternative matches, so both walks run to
+    // the end.
+    val members =
+      (1..600).map {
+        Schema(type = Type.OBJECT, properties = mapOf("k$it" to Schema(type = Type.STRING)))
+      }
+    val schema =
+      Schema(
+        type = Type.OBJECT,
+        properties = mapOf("x" to Schema(type = Type.OBJECT, anyOf = members)),
+      )
+
+    val result =
+      SchemaUtils.validateMapOnSchema(mapOf("x" to mapOf("k600" to "v")), schema, "Input")
+
+    assertTrue(result.isSuccess, "got: ${result.exceptionOrNull()?.message}")
+  }
+
+  @Test
+  fun validateMapOnSchema_unionMemberOfAnotherType_doesNotMatchAMap() {
+    // `matchType` hands an object's whole union to `validateMapOnSchema`, which reads `properties`
+    // and `required` but never `type`. A member declaring `string` describes no map, so it must
+    // not be the alternative that satisfies one.
+    val inner = Schema(type = Type.OBJECT, anyOf = listOf(Schema(type = Type.STRING)))
+    val schema = Schema(type = Type.OBJECT, properties = mapOf("x" to inner))
+
+    val result = SchemaUtils.validateMapOnSchema(mapOf("x" to mapOf("a" to 1)), schema, "Input")
+
+    assertTrue(result.isFailure)
+  }
+
+  @Test
+  fun validateMapOnSchema_rootSchemaOfAnotherType_isRejected() {
+    // Nothing past the top of the function reads `type`, and the key check only runs for a schema
+    // that names properties, so without an explicit check a primitive or array schema accepted any
+    // object at all. `validateOutputSchema` documents the opposite and `LlmAgent.outputSchema`
+    // relies on it.
+    val args = mapOf("a" to 1)
+
+    assertTrue(SchemaUtils.validateMapOnSchema(args, Schema(type = Type.STRING), "Input").isFailure)
+    assertTrue(
+      SchemaUtils.validateMapOnSchema(
+          args,
+          Schema(type = Type.ARRAY, items = Schema(type = Type.STRING)),
+          "Input",
+        )
+        .isFailure
+    )
+  }
+
+  @Test
+  fun validateMapOnSchema_longListOfUnionItems_isNotCalledTooComplex() {
+    // The budget bounds how far a schema multiplies out. A list is data, not schema, so its length
+    // must not spend it: 501 plain strings against a two-member item union used to exhaust the
+    // 1000 alternatives and report a trivial schema as too complex.
+    val itemSchema = Schema(anyOf = listOf(Schema(type = Type.INTEGER), Schema(type = Type.STRING)))
+    val schema =
+      Schema(
+        type = Type.OBJECT,
+        properties = mapOf("xs" to Schema(type = Type.ARRAY, items = itemSchema)),
+      )
+
+    val result = SchemaUtils.validateMapOnSchema(mapOf("xs" to List(501) { "s" }), schema, "Input")
+
+    assertTrue(result.isSuccess, "got: ${result.exceptionOrNull()?.message}")
+  }
+
+  @Test
+  fun validateMapOnSchema_budgetSpentInsideTheLastAlternative_saysWhyItGaveUp() {
+    // Nothing spends the budget after the final alternative, so if that is where it runs out the
+    // reason has to be carried out of the loop. Otherwise this comes back as "matches nothing",
+    // which is a different answer and a wrong one.
+    var nested = Schema(type = Type.STRING)
+    repeat(24) { nested = Schema(anyOf = listOf(nested, nested)) }
+    val schema =
+      Schema(type = Type.OBJECT, properties = mapOf("x" to Schema(anyOf = listOf(nested))))
+
+    val result = SchemaUtils.validateMapOnSchema(mapOf("x" to 42), schema, "Input")
+
+    assertTrue(result.isFailure)
+    assertTrue(
+      result.exceptionOrNull()?.message?.contains("too complex to validate") == true,
+      "expected the budget message, got: ${result.exceptionOrNull()?.message}",
+    )
+  }
+
+  @Test
   fun validateMapOnSchema_missingRequired_returnsFailure() {
     val schema =
       Schema(
@@ -84,8 +400,10 @@ class SchemaUtilsTest {
 
     assertTrue(result.isFailure)
     assertIs<IllegalArgumentException>(result.exceptionOrNull())
+    // The schema is named by the shape that explains the rejection, not by the whole data class:
+    // eighteen fields, nearly all of them unset, would bury the one detail that matters.
     assertEquals(
-      "Input arg: extra doesn't exist in input schema: $schema",
+      "Input arg: extra doesn't exist in input schema: Schema(type=OBJECT, properties=[name])",
       result.exceptionOrNull()?.message,
     )
   }
@@ -195,7 +513,8 @@ class SchemaUtilsTest {
   }
 
   @Test
-  fun validateMapOnSchema_typeUnspecified_returnsFailure() {
+  fun validateMapOnSchema_typeUnspecified_acceptsTheValue() {
+    // An untyped property says nothing about its value, so validating against it must not fail.
     val schema =
       Schema(
         type = Type.OBJECT,
@@ -205,8 +524,7 @@ class SchemaUtilsTest {
 
     val result = SchemaUtils.validateMapOnSchema(args, schema, "Input")
 
-    assertTrue(result.isFailure)
-    assertIs<IllegalArgumentException>(result.exceptionOrNull())
+    assertTrue(result.isSuccess)
   }
 
   @Test

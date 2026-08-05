@@ -16,6 +16,8 @@
 
 package com.google.adk.kt.tools
 
+import com.google.adk.kt.annotations.FrameworkInternalApi
+import com.google.adk.kt.serialization.anyToJsonElement
 import com.google.adk.kt.types.FunctionDeclaration
 import com.google.adk.kt.types.Schema
 import com.google.adk.kt.types.Type
@@ -75,9 +77,22 @@ private fun Iterable<FunctionDeclaration>.toXmlPromptDescription(): String {
     serializer.endTag(null, "description")
 
     val parameters = declaration.parameters
-    if (parameters?.properties?.isNotEmpty() == true) {
+    if (parameters != null && parameters.describesArguments()) {
       serializer.startTag(null, "parameters")
-      schemaToXml(parameters, serializer)
+      if (parameters.properties != null) {
+        schemaToXml(parameters, serializer)
+      } else {
+        // The arguments are not a named list -- an object left open, or a union. `schemaToXml`
+        // walks named properties, so it would write an empty element here; the schema is written
+        // out as itself instead. Only at the top level: a nested one already has its type and
+        // constraints written by the property loop before it recurses.
+        parameters.typeNameOrNull()?.let { typeName ->
+          serializer.startTag(null, "type")
+          serializer.text(typeName)
+          serializer.endTag(null, "type")
+        }
+        parameters.constraintsXml(serializer)
+      }
       serializer.endTag(null, "parameters")
     }
 
@@ -97,7 +112,7 @@ private fun Iterable<FunctionDeclaration>.toJsonPromptDescription(): String =
           tool["description"] = JsonPrimitive(declaration.description)
 
           val parameters = declaration.parameters
-          if (parameters?.properties?.isNotEmpty() == true) {
+          if (parameters != null && parameters.describesArguments()) {
             tool["parameters"] = schemaToJsonObject(parameters)
           }
         }
@@ -115,9 +130,54 @@ private fun Iterable<FunctionDeclaration>.toJsonPromptDescription(): String =
 private fun jsonObject(fill: (MutableMap<String, JsonElement>) -> Unit): JsonObject =
   JsonObject(LinkedHashMap<String, JsonElement>().also(fill))
 
+/**
+ * Renders a `default` as JSON so it keeps the property's own type: an integer must not come out as
+ * "5", nor a list as "[a, b]", which is all `toString` would give.
+ *
+ * A `default` is declared `Any?`, so a caller can put a value in it that has no JSON shape. That is
+ * worth a default that reads oddly, not a tool description that fails to render, so such a value
+ * falls back to its own text.
+ */
+@OptIn(FrameworkInternalApi::class)
+private fun defaultAsJson(value: Any): JsonElement =
+  try {
+    anyToJsonElement(value)
+  } catch (unrenderable: IllegalArgumentException) {
+    JsonPrimitive(value.toString())
+  }
+
+/**
+ * Whether this parameters schema says anything about what the tool accepts.
+ *
+ * An empty `properties` map is the one shape that means "no arguments", and a tool declaring that
+ * is described without a parameters block at all. An absent map is a different statement: the
+ * arguments are simply not a named list, which is how an open object or a union is written, and the
+ * model still has to be told about them.
+ */
+private fun Schema.describesArguments(): Boolean =
+  if (properties != null) properties.isNotEmpty() else anyOf != null || type != null
+
 private fun schemaToJsonObject(schema: Schema): JsonObject = jsonObject { fields ->
-  fields["type"] = JsonPrimitive(schema.type?.name?.lowercase() ?: "string")
+  schema.typeNameOrNull()?.let { fields["type"] = JsonPrimitive(it) }
   schema.description?.let { fields["description"] = JsonPrimitive(it) }
+
+  // This description is the whole contract the model gets on a prompt-driven tool path, so every
+  // constraint a schema can express is written out.
+  schema.title?.let { fields["title"] = JsonPrimitive(it) }
+  schema.format?.let { fields["format"] = JsonPrimitive(it) }
+  schema.nullable?.let { fields["nullable"] = JsonPrimitive(it) }
+  schema.pattern?.let { fields["pattern"] = JsonPrimitive(it) }
+  schema.minimum?.let { fields["minimum"] = JsonPrimitive(it) }
+  schema.maximum?.let { fields["maximum"] = JsonPrimitive(it) }
+  schema.minLength?.let { fields["minLength"] = JsonPrimitive(it) }
+  schema.maxLength?.let { fields["maxLength"] = JsonPrimitive(it) }
+  schema.minItems?.let { fields["minItems"] = JsonPrimitive(it) }
+  schema.maxItems?.let { fields["maxItems"] = JsonPrimitive(it) }
+  schema.enum?.let { values -> fields["enum"] = JsonArray(values.map { JsonPrimitive(it) }) }
+  schema.default?.let { fields["default"] = defaultAsJson(it) }
+  schema.anyOf?.let { members ->
+    fields["anyOf"] = JsonArray(members.map { schemaToJsonObject(it) })
+  }
 
   when (schema.type) {
     Type.OBJECT ->
@@ -134,6 +194,53 @@ private fun schemaToJsonObject(schema: Schema): JsonObject = jsonObject { fields
   }
 }
 
+/**
+ * Writes the constraints a property declares, so a prompt-driven model is told the same rules a
+ * native function-calling backend would receive.
+ *
+ * A union is written out as nested `<anyOf>` entries, because naming the type `anyOf` would
+ * describe a type that does not exist and leave the model with no idea what it may send.
+ */
+private fun Schema.constraintsXml(serializer: KXmlSerializer) {
+  fun tag(name: String, value: Any?) {
+    if (value == null) return
+    serializer.startTag(null, name)
+    serializer.text(value.toString())
+    serializer.endTag(null, name)
+  }
+  tag("title", title)
+  tag("format", format)
+  tag("nullable", nullable)
+  // Rendered as JSON rather than with `toString`, for the reason given on `defaultAsJson`.
+  default?.let { tag("default", defaultAsJson(it).toString()) }
+  tag("pattern", pattern)
+  tag("minimum", minimum)
+  tag("maximum", maximum)
+  tag("minLength", minLength)
+  tag("maxLength", maxLength)
+  tag("minItems", minItems)
+  tag("maxItems", maxItems)
+  enum?.let { values -> for (value in values) tag("enum", value) }
+  anyOf?.let { members ->
+    for (member in members) {
+      serializer.startTag(null, "anyOf")
+      tag("type", member.typeNameOrNull())
+      member.constraintsXml(serializer)
+      serializer.endTag(null, "anyOf")
+    }
+  }
+}
+
+/**
+ * The name a tool description gives this schema's type, in either format.
+ *
+ * A schema carrying only `anyOf` has no type of its own; its alternatives are written out instead,
+ * so it reports none rather than claiming to be a string.
+ */
+private fun Schema.typeNameOrNull(): String? =
+  type?.takeIf { it != Type.TYPE_UNSPECIFIED }?.name?.lowercase()
+    ?: if (anyOf != null) null else "string"
+
 private fun schemaToXml(schema: Schema, serializer: KXmlSerializer) {
   when (schema.type) {
     Type.OBJECT -> {
@@ -145,16 +252,19 @@ private fun schemaToXml(schema: Schema, serializer: KXmlSerializer) {
           serializer.text(name)
           serializer.endTag(null, "name")
 
-          val propType = propSchema.type?.name?.lowercase() ?: "string"
-          serializer.startTag(null, "type")
-          serializer.text(propType)
-          serializer.endTag(null, "type")
+          propSchema.typeNameOrNull()?.let { propType ->
+            serializer.startTag(null, "type")
+            serializer.text(propType)
+            serializer.endTag(null, "type")
+          }
 
           if (propSchema.description != null) {
             serializer.startTag(null, "description")
             serializer.text(propSchema.description)
             serializer.endTag(null, "description")
           }
+
+          propSchema.constraintsXml(serializer)
 
           val required = schema.required?.contains(name) == true
           serializer.startTag(null, "required")
@@ -175,10 +285,12 @@ private fun schemaToXml(schema: Schema, serializer: KXmlSerializer) {
       if (schema.items != null) {
         serializer.startTag(null, "items")
 
-        val itemType = schema.items.type?.name?.lowercase() ?: "string"
-        serializer.startTag(null, "type")
-        serializer.text(itemType)
-        serializer.endTag(null, "type")
+        schema.items.typeNameOrNull()?.let { itemType ->
+          serializer.startTag(null, "type")
+          serializer.text(itemType)
+          serializer.endTag(null, "type")
+        }
+        schema.items.constraintsXml(serializer)
 
         if (schema.items.type == Type.OBJECT || schema.items.type == Type.ARRAY) {
           serializer.startTag(null, "schema")

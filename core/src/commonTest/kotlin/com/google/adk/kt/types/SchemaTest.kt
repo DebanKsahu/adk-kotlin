@@ -16,12 +16,15 @@
 
 package com.google.adk.kt.types
 
+import com.google.adk.kt.annotations.FrameworkInternalApi
+import com.google.adk.kt.serialization.adkJson
 import com.google.genai.kotlin.types.Schema as GenAiSchema
 import com.google.genai.kotlin.types.Type as GenAiType
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 
+@OptIn(FrameworkInternalApi::class)
 class SchemaTest {
 
   @Test
@@ -76,5 +79,111 @@ class SchemaTest {
     val items = ktSchema.items
     assertNotNull(items)
     assertEquals(Type.INTEGER, items.type)
+  }
+
+  @Test
+  fun toGenAiSchema_constraintFields_roundTrip() {
+    val ktSchema =
+      Schema(
+        type = Type.STRING,
+        description = "A constrained value",
+        enum = listOf("EAST", "WEST"),
+        format = "date-time",
+        nullable = true,
+        default = "EAST",
+        anyOf = listOf(Schema(type = Type.STRING), Schema(type = Type.INTEGER)),
+        title = "Direction",
+        pattern = "^[A-Z]+$",
+        minimum = 1.0,
+        maximum = 10.0,
+        minLength = 2,
+        maxLength = 8,
+        minItems = 1,
+        maxItems = 5,
+      )
+
+    val roundTripped = ktSchema.toGenAiSchema().toKtSchema()
+
+    assertEquals(ktSchema, roundTripped)
+  }
+
+  @Test
+  fun toGenAiSchema_constraintFields_reachTheGenAiSchema() {
+    val ktSchema =
+      Schema(
+        type = Type.STRING,
+        format = "date-time",
+        nullable = true,
+        title = "Direction",
+        pattern = "^[A-Z]+$",
+        minimum = 1.0,
+        maximum = 10.0,
+        minLength = 2,
+        maxLength = 8,
+        minItems = 1,
+        maxItems = 5,
+        anyOf = listOf(Schema(type = Type.INTEGER)),
+      )
+
+    val genAiSchema = ktSchema.toGenAiSchema()
+
+    assertEquals("date-time", genAiSchema.format)
+    assertEquals(true, genAiSchema.nullable)
+    assertEquals("Direction", genAiSchema.title)
+    assertEquals("^[A-Z]+$", genAiSchema.pattern)
+    assertEquals(1.0, genAiSchema.minimum)
+    assertEquals(10.0, genAiSchema.maximum)
+    assertEquals(2L, genAiSchema.minLength)
+    assertEquals(8L, genAiSchema.maxLength)
+    assertEquals(1L, genAiSchema.minItems)
+    assertEquals(5L, genAiSchema.maxItems)
+    assertEquals(GenAiType.INTEGER, genAiSchema.anyOf?.single()?.type)
+  }
+
+  @Test
+  fun toGenAiSchema_defaultValue_survivesBothDirections() {
+    val ktSchema = Schema(type = Type.INTEGER, default = 7)
+
+    val genAiSchema = ktSchema.toGenAiSchema()
+
+    assertNotNull(genAiSchema.default)
+    // Compared as a number rather than by identity: the value crosses a JSON boundary, where the
+    // integer widths Kotlin distinguishes collapse into one number type.
+    assertEquals(7L, (genAiSchema.toKtSchema().default as Number).toLong())
+  }
+
+  @Test
+  fun toGenAiSchema_longDefault_keepsItsValue() {
+    val ktSchema = Schema(type = Type.INTEGER, default = 7L)
+
+    val roundTripped = ktSchema.toGenAiSchema().toKtSchema()
+
+    assertEquals(7L, (roundTripped.default as Number).toLong())
+  }
+
+  @Test
+  fun toGenAiSchema_stringDefault_roundTrips() {
+    val ktSchema = Schema(type = Type.STRING, default = "EAST")
+
+    val roundTripped = ktSchema.toGenAiSchema().toKtSchema()
+
+    assertEquals("EAST", roundTripped.default)
+  }
+
+  @Test
+  fun adkJson_schemaWithDefault_serializes() {
+    // `default` is the one field typed `Any`, so it needs the contextual serializer that `adkJson`
+    // registers. Schemas are persisted as part of the cached-content metadata.
+    val schema = Schema(type = Type.INTEGER, default = 7, title = "Count")
+
+    val decoded =
+      adkJson.decodeFromString(
+        Schema.serializer(),
+        adkJson.encodeToString(Schema.serializer(), schema),
+      )
+
+    assertEquals(Type.INTEGER, decoded.type)
+    assertEquals("Count", decoded.title)
+    assertEquals(7L, (decoded.default as Number).toLong())
   }
 }

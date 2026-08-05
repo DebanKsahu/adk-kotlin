@@ -16,6 +16,7 @@
 
 package com.google.adk.kt.types
 
+import kotlinx.serialization.Contextual
 import kotlinx.serialization.Serializable
 
 /**
@@ -32,6 +33,28 @@ import kotlinx.serialization.Serializable
  * @property required A list of required property names. Applicable only if `type` is [Type.OBJECT].
  * @property description A human-readable description of the schema.
  * @property enum Restricts a value to a fixed set of values.
+ * @property format The format of the data, refining [type]. The field is free-form, but Gemini
+ *   accepts only `int32` or `int64` for [Type.INTEGER] and [Type.NUMBER], and `enum` or `date-time`
+ *   for [Type.STRING]; it rejects a declaration carrying any other value.
+ * @property nullable Whether the value may be null.
+ * @property default The value to assume when the property is absent. Must be JSON-native -- a
+ *   `String`, number, `Boolean`, `Map` or `List` -- since anything else fails to serialize.
+ *   Serializing a [Schema] that sets this needs a `Json` whose `serializersModule` carries a
+ *   contextual serializer for `Any`; a plain `Json` throws. JSON also has a single number type, so
+ *   a numeric default that crosses a JSON boundary comes back as whatever Kotlin type the reader
+ *   picks, not necessarily the one it was written as.
+ * @property anyOf The value must validate against at least one of these subschemas.
+ * @property title A title for the schema.
+ * @property pattern A regular expression the value must match. Applicable only if `type` is
+ *   [Type.STRING].
+ * @property minimum The smallest allowed value. Applicable only if `type` is [Type.INTEGER] or
+ *   [Type.NUMBER].
+ * @property maximum The largest allowed value. Applicable only if `type` is [Type.INTEGER] or
+ *   [Type.NUMBER].
+ * @property minLength The shortest allowed string. Applicable only if `type` is [Type.STRING].
+ * @property maxLength The longest allowed string. Applicable only if `type` is [Type.STRING].
+ * @property minItems The fewest allowed items. Applicable only if `type` is [Type.ARRAY].
+ * @property maxItems The most allowed items. Applicable only if `type` is [Type.ARRAY].
  */
 @Serializable
 data class Schema(
@@ -41,4 +64,16 @@ data class Schema(
   val required: List<String>? = null,
   val description: String? = null,
   val enum: List<String>? = null,
+  val format: String? = null,
+  val nullable: Boolean? = null,
+  val default: @Contextual Any? = null,
+  val anyOf: List<Schema>? = null,
+  val title: String? = null,
+  val pattern: String? = null,
+  val minimum: Double? = null,
+  val maximum: Double? = null,
+  val minLength: Long? = null,
+  val maxLength: Long? = null,
+  val minItems: Long? = null,
+  val maxItems: Long? = null,
 )

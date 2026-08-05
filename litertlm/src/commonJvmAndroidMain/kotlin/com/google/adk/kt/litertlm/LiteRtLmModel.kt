@@ -396,9 +396,11 @@ internal fun Schema.toMap(): Map<String, Any> {
         AdkSchemaType.BOOLEAN -> "boolean"
         AdkSchemaType.ARRAY -> "array"
         AdkSchemaType.NULL -> "null"
-        else -> "string"
+        // A schema carrying only `anyOf` has no type of its own; naming one here would sit next
+        // to the alternatives and contradict them.
+        else -> if (anyOf != null) null else "string"
       }
-    map["type"] = typeName
+    typeName?.let { map["type"] = it }
   }
 
   description?.let { map["description"] = it }
@@ -406,6 +408,20 @@ internal fun Schema.toMap(): Map<String, Any> {
   items?.let { map["items"] = it.toMap() }
   required?.let { map["required"] = it }
   enum?.let { map["enum"] = it }
+  // The tool description is plain JSON rather than a typed backend schema, so every constraint a
+  // caller can express is emitted verbatim under its JSON Schema name.
+  format?.let { map["format"] = it }
+  nullable?.let { map["nullable"] = it }
+  default?.let { map["default"] = it }
+  anyOf?.let { schemas -> map["anyOf"] = schemas.map { it.toMap() } }
+  title?.let { map["title"] = it }
+  pattern?.let { map["pattern"] = it }
+  minimum?.let { map["minimum"] = it }
+  maximum?.let { map["maximum"] = it }
+  minLength?.let { map["minLength"] = it }
+  maxLength?.let { map["maxLength"] = it }
+  minItems?.let { map["minItems"] = it }
+  maxItems?.let { map["maxItems"] = it }
 
   return map
 }

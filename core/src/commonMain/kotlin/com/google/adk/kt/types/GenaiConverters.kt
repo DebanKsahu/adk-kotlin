@@ -115,6 +115,11 @@ internal fun JsonElement.toAny(): Any? =
     is JsonPrimitive -> {
       when {
         this.isString -> this.contentOrNull
+        // Narrowest first, so a small number stays an `Int` for callers reading tool arguments.
+        // `jsonElementToAny` in the serializers goes straight to `Long`, so the same JSON number
+        // can come back as either depending on which path decoded it -- and [Schema] is a data
+        // class, so two schemas differing only in that are unequal. Compare such values as
+        // `Number`.
         else ->
           this.booleanOrNull
             ?: this.intOrNull
@@ -632,6 +637,18 @@ internal fun GenAiSchema.toKtSchema(): Schema =
     required = required,
     description = description,
     enum = enum,
+    format = format,
+    nullable = nullable,
+    default = default?.toAny(),
+    anyOf = anyOf?.map { it.toKtSchema() },
+    title = title,
+    pattern = pattern,
+    minimum = minimum,
+    maximum = maximum,
+    minLength = minLength,
+    maxLength = maxLength,
+    minItems = minItems,
+    maxItems = maxItems,
   )
 
 /** Converts an ADK [Schema] to a [GenAiSchema] for the GenAI SDK. */
@@ -643,6 +660,18 @@ internal fun Schema.toGenAiSchema(): GenAiSchema =
     required = required,
     description = description,
     enum = enum,
+    format = format,
+    nullable = nullable,
+    default = default?.toJsonElement(),
+    anyOf = anyOf?.map { it.toGenAiSchema() },
+    title = title,
+    pattern = pattern,
+    minimum = minimum,
+    maximum = maximum,
+    minLength = minLength,
+    maxLength = maxLength,
+    minItems = minItems,
+    maxItems = maxItems,
   )
 
 // --- UrlContext ---
