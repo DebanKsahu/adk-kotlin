@@ -54,6 +54,7 @@ internal fun Event.toDto(): SessionEventDto {
       longRunningToolIds = longRunningToolIds.takeIf { it.isNotEmpty() }?.toList(),
       groundingMetadata = groundingMetadata?.let { adkJson.encodeToJsonElement(it) },
       usageMetadata = usageMetadata?.let { adkJson.encodeToJsonElement(it) },
+      customMetadata = customMetadata?.let { customMetadataToDto(it) },
     )
   val actionsDto =
     EventActionsDto(
@@ -97,6 +98,7 @@ internal fun SessionEventDto.toAdk(): Event {
       metadata?.groundingMetadata?.let { adkJson.decodeFromJsonElement<GroundingMetadata>(it) },
     usageMetadata =
       metadata?.usageMetadata?.let { adkJson.decodeFromJsonElement<UsageMetadata>(it) },
+    customMetadata = metadata?.customMetadata?.let { customMetadataFromDto(it) },
     timestamp = timestamp?.toEpochMillis() ?: 0L,
   )
 }
@@ -233,3 +235,25 @@ private fun stateDeltaToDto(stateDelta: Map<String, Any>): JsonElement {
   }
   return JsonObject(entries)
 }
+
+/**
+ * Serializes the free-form event custom metadata into the `google.protobuf.Struct` carried by
+ * `EventMetadata.custom_metadata`.
+ */
+@OptIn(FrameworkInternalApi::class)
+private fun customMetadataToDto(customMetadata: Map<String, Any>): JsonElement =
+  JsonObject(customMetadata.mapValues { (_, value) -> anyToJsonElement(value) })
+
+/**
+ * Reads back the `google.protobuf.Struct` written by [customMetadataToDto]. Entries whose value is
+ * JSON `null` are dropped, since [Event.customMetadata] does not permit null values.
+ */
+@OptIn(FrameworkInternalApi::class)
+private fun customMetadataFromDto(customMetadata: JsonElement): Map<String, Any>? =
+  (customMetadata as? JsonObject)?.let { obj ->
+    buildMap {
+      for ((key, value) in obj) {
+        jsonElementToAny(value)?.let { put(key, it) }
+      }
+    }
+  }

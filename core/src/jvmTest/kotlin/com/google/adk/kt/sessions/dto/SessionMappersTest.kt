@@ -27,6 +27,7 @@ import com.google.common.truth.Truth.assertThat
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -219,5 +220,84 @@ class SessionMappersTest {
     assertThat(part.keys).doesNotContain("partMetadata")
     // The rest of the part is untouched.
     assertThat(part["text"]!!.jsonPrimitive.content).isEqualTo("hi")
+  }
+
+  @Test
+  fun eventToDto_customMetadata_isWrittenUnderEventMetadata() {
+    // custom_metadata is field 7 of EventMetadata in session.proto, not a top-level SessionEvent
+    // field, so it must be nested under eventMetadata on the wire.
+    val event =
+      Event(
+        author = "user",
+        timestamp = 1000L,
+        customMetadata = mapOf("trace_id" to "abc123", "attempt" to 2),
+      )
+
+    val struct = event.toDto().eventMetadata!!.customMetadata!!.jsonObject
+
+    // Write side only: `attempt` is written as the Int it was given, but comes back widened to a
+    // Long. See event_roundTrip_widensCustomMetadataIntegersToLong.
+    assertThat(struct["trace_id"]!!.jsonPrimitive.content).isEqualTo("abc123")
+    assertThat(struct["attempt"]!!.jsonPrimitive.int).isEqualTo(2)
+  }
+
+  @Test
+  fun event_roundTrip_preservesCustomMetadata() {
+    val original =
+      Event(
+        author = "user",
+        timestamp = 1000L,
+        customMetadata = mapOf("trace_id" to "abc123", "nested" to mapOf("k" to "v")),
+      )
+
+    val restored = original.toDto().toAdk()
+
+    assertThat(restored.customMetadata)
+      .containsExactlyEntriesIn(mapOf("trace_id" to "abc123", "nested" to mapOf("k" to "v")))
+  }
+
+  @Test
+  fun eventToDto_noCustomMetadata_omitsFieldFromWire() {
+    val event = Event(author = "user", timestamp = 1000L)
+
+    assertThat(event.toDto().eventMetadata!!.customMetadata).isNull()
+  }
+
+  @Test
+  fun event_roundTrip_widensCustomMetadataIntegersToLong() {
+    // `custom_metadata` is a google.protobuf.Struct, so numbers cross the wire as JSON numbers with
+    // no integer width. `jsonElementToAny` tries `longOrNull` before `doubleOrNull`, so an Int
+    // always comes back as a Long and a fractional value as a Double; an Int never round-trips as
+    // an Int. Callers that compare against the map they wrote must expect the widened types. This
+    // is pre-existing behaviour shared with `stateDelta`, documented here so it is not rediscovered
+    // as a bug.
+    val original =
+      Event(author = "user", timestamp = 1000L, customMetadata = mapOf("int" to 2, "double" to 2.5))
+
+    val restored = original.toDto().toAdk()
+
+    assertThat(restored.customMetadata)
+      .containsExactlyEntriesIn(mapOf("int" to 2L, "double" to 2.5))
+  }
+
+  @Test
+  fun sessionEventDtoToAdk_nullValuedCustomMetadata_dropsNullEntries() {
+    // Struct permits null values but Event.customMetadata is Map<String, Any> with non-null values,
+    // so a null read off the wire must be dropped at the boundary rather than surfacing as a null
+    // held under a non-null type.
+    val dto =
+      SessionEventDto(
+        author = "user",
+        timestamp = TimestampDto.fromEpochMillis(1000L),
+        eventMetadata =
+          EventMetadataDto(
+            customMetadata =
+              JsonObject(mapOf("present" to JsonPrimitive("v"), "absent" to JsonNull))
+          ),
+      )
+
+    val event = dto.toAdk()
+
+    assertThat(event.customMetadata).containsExactly("present", "v")
   }
 }

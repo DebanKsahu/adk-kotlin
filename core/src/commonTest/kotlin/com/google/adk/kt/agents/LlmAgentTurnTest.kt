@@ -33,6 +33,7 @@ import com.google.adk.kt.types.Part
 import com.google.adk.kt.types.Role
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -120,5 +121,36 @@ class LlmAgentTurnTest {
       ),
       simplifyEvents(flowEvents),
     )
+  }
+
+  /**
+   * `errorCode` and `customMetadata` exist on both [LlmResponse] and `Event`, so finalizing the
+   * model-response event must carry them over.
+   */
+  @Test
+  fun runAsync_withErrorCodeAndCustomMetadata_propagatesToFinalEvent() = runBlocking {
+    val model =
+      DummyModel("metadata-model") {
+        flow {
+          emit(
+            LlmResponse(
+              content = modelMessage("Answered."),
+              errorCode = "SAFETY",
+              customMetadata = mapOf("trace_id" to "abc123", "attempt" to 2),
+            )
+          )
+        }
+      }
+    val agent = LlmAgent(name = "MetadataAgent", description = "Echoes metadata.", model = model)
+    val runner = InMemoryRunner(agent = agent)
+
+    val modelEvent =
+      runner
+        .runAsync(userId = "user1", sessionId = "session1", newMessage = userMessage("Hello?"))
+        .toList()
+        .single { it.author == agent.name }
+
+    assertEquals("SAFETY", modelEvent.errorCode)
+    assertEquals(mapOf("trace_id" to "abc123", "attempt" to 2), modelEvent.customMetadata)
   }
 }

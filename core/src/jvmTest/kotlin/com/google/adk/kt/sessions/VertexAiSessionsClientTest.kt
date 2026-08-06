@@ -17,6 +17,7 @@
 package com.google.adk.kt.sessions
 
 import com.google.adk.kt.gcp.GoogleApiClient
+import com.google.adk.kt.sessions.dto.EventMetadataDto
 import com.google.adk.kt.sessions.dto.SessionEventDto
 import com.google.adk.kt.sessions.dto.TimestampDto
 import com.google.auth.oauth2.AccessToken
@@ -27,6 +28,8 @@ import java.time.Instant
 import java.time.temporal.ChronoUnit
 import java.util.Date
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
@@ -222,6 +225,30 @@ class VertexAiSessionsClientTest {
     val request = server.takeRequest()
     assertThat(request.method).isEqualTo("POST")
     assertThat(request.path).endsWith("/reasoningEngines/123/sessions/s1:appendEvent")
+  }
+
+  @Test
+  fun appendEvent_customMetadata_isSerializedUnderEventMetadata() {
+    // custom_metadata is field 7 of EventMetadata in session.proto, so the proto-JSON parser
+    // expects it nested under eventMetadata; emitting it at the top level would be rejected.
+    server.enqueue(MockResponse().setResponseCode(200))
+
+    val result = runBlocking {
+      client.appendEvent(
+        ENGINE,
+        "s1",
+        SessionEventDto(
+          author = "user",
+          timestamp = TimestampDto.fromEpochMillis(1000),
+          eventMetadata =
+            EventMetadataDto(customMetadata = JsonObject(mapOf("k" to JsonPrimitive("v")))),
+        ),
+      )
+    }
+
+    assertThat(result.isSuccess).isTrue()
+    val body = server.takeRequest().body.readUtf8()
+    assertThat(body).contains("\"eventMetadata\":{\"customMetadata\":{\"k\":\"v\"}}")
   }
 
   @Test
