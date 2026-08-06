@@ -386,6 +386,7 @@ class GenaiConvertersTest {
                   uri = "https://maps.google.com/?cid=1",
                   title = "Googleplex",
                   placeId = "places/ABC",
+                  text = "Open now, closes at 6 PM.",
                 )
             ),
           ),
@@ -405,6 +406,10 @@ class GenaiConvertersTest {
     assertEquals(listOf("kotlin coroutines"), genaiGroundingMetadata.webSearchQueries)
     assertEquals("example.com", genaiGroundingMetadata.groundingChunks?.get(0)?.web?.domain)
     assertEquals("places/ABC", genaiGroundingMetadata.groundingChunks?.get(1)?.maps?.placeId)
+    assertEquals(
+      "Open now, closes at 6 PM.",
+      genaiGroundingMetadata.groundingChunks?.get(1)?.maps?.text,
+    )
 
     val convertedBack = genaiGroundingMetadata.fromGenaiSdk()
     assertEquals(adkGroundingMetadata, convertedBack)

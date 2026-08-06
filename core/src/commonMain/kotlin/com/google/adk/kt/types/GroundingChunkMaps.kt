@@ -27,4 +27,6 @@ data class GroundingChunkMaps(
   val title: String? = null,
   /** The Google Maps place id (e.g. `places/ChIJ...`). */
   val placeId: String? = null,
+  /** The text of the place answer. */
+  val text: String? = null,
 )

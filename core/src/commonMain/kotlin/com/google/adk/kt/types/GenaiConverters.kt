@@ -517,11 +517,11 @@ internal fun GroundingChunk.toGenaiSdk(): GenAiGroundingChunk =
 // --- GroundingChunkMaps ---
 /** Converts a [GenAiGroundingChunkMaps] from the GenAI SDK to an ADK [GroundingChunkMaps]. */
 internal fun GenAiGroundingChunkMaps.fromGenaiSdk(): GroundingChunkMaps =
-  GroundingChunkMaps(uri = uri, title = title, placeId = placeId)
+  GroundingChunkMaps(uri = uri, title = title, placeId = placeId, text = text)
 
 /** Converts an ADK [GroundingChunkMaps] to a [GenAiGroundingChunkMaps] for the GenAI SDK. */
 internal fun GroundingChunkMaps.toGenaiSdk(): GenAiGroundingChunkMaps =
-  GenAiGroundingChunkMaps(uri = uri, title = title, placeId = placeId)
+  GenAiGroundingChunkMaps(uri = uri, title = title, placeId = placeId, text = text)
 
 // --- GroundingChunkWeb ---
 /** Converts a [GenAiGroundingChunkWeb] from the GenAI SDK to an ADK [GroundingChunkWeb]. */
