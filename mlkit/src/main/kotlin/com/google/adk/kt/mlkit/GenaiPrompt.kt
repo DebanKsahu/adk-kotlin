@@ -30,10 +30,11 @@ import kotlinx.coroutines.flow.flow
 /**
  * A [Model] implementation that uses the ML Kit GenAI API to generate content.
  *
- * ML Kit has no per-turn role, so this implementation has these limitations:
+ * ML Kit has no per-turn role, so this implementation has these limitations, which stand until the
+ * public ML Kit API allows per-turn roles:
  * - Multi-turn is approximated: for multi-turn requests each turn's text is prefixed with a
- *   `[role]:` marker (e.g. `[user]:`/`[model]:`), and a default system instruction tells the model
- *   not to echo the marker back.
+ *   `[role]:` marker (e.g. `[user]:`/`[model]:`), and a default system instruction requires the
+ *   model not to echo a marker back and not to continue the conversation past its own reply.
  * - Tool use is unsupported: `functionCall`/`functionResponse` parts are dropped.
  * - Only the first response candidate is used.
  *

@@ -180,10 +180,11 @@ class GenaiPromptConversionsTest {
           )
       )
 
-    val generateContentRequest = request.toGenerateContentRequest()
+    val systemInstruction = request.toGenerateContentRequest().systemInstruction?.textString
 
-    assertThat(generateContentRequest.systemInstruction?.textString)
-      .contains("Do not prefix your own response with a role marker")
+    // The two leaks the instruction must rule out: a role marker, and an echoed earlier turn.
+    assertThat(systemInstruction).contains("Never write a marker yourself")
+    assertThat(systemInstruction).contains("Write only your own reply")
   }
 
   @Test
@@ -204,8 +205,9 @@ class GenaiPromptConversionsTest {
     val generateContentRequest = request.toGenerateContentRequest()
 
     val systemInstruction = generateContentRequest.systemInstruction?.textString
-    assertThat(systemInstruction).contains("Do not prefix your own response with a role marker")
-    assertThat(systemInstruction).contains("Be concise.")
+    assertThat(systemInstruction).contains("Never write a marker yourself")
+    // The caller's instruction comes last, so it is not overridden by the default guidance.
+    assertThat(systemInstruction).endsWith("\n\nBe concise.")
   }
 
   @Ignore("throws java.lang.VerifyError")

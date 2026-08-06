@@ -43,9 +43,12 @@ internal object GenaiPromptConversions {
 
   /** Guidance prepended to the system instruction for multi-turn requests. */
   private val multiTurnSystemInstruction =
-    "You are given a multi-turn conversation history where each turn is prefixed with a role " +
-      "marker such as \"[user]:\" or \"[model]:\". Do not prefix your own response with a role " +
-      "marker such as \"[model]:\"."
+    "The conversation history below prefixes each turn with a role marker, \"[user]:\" or " +
+      "\"[model]:\". The markers only label who spoke. Two rules about them are absolute:\n" +
+      "1. Never write a marker yourself: your reply must not begin with \"[model]:\", and must " +
+      "not contain \"[user]:\" or \"[model]:\" anywhere.\n" +
+      "2. Write only your own reply: never continue the transcript with another turn, and never " +
+      "reproduce an earlier turn unless the user asks you to quote or summarize it."
 
   /**
    * Converts an [LlmRequest] to a [GenerateContentRequest].
