@@ -95,11 +95,12 @@ class FunctionToolGenerator(
 
     val customDescription =
       toolAnnotation?.arguments?.find { it.name?.asString() == "description" }?.value as? String
-    val baseDesc = if (!customDescription.isNullOrBlank()) {
-      customDescription
-    } else {
-      extractFunctionDescription(function.docString).ifBlank { "Function ${functionName}" }
-    }
+    val baseDesc =
+      if (!customDescription.isNullOrBlank()) {
+        customDescription
+      } else {
+        extractFunctionDescription(function.docString).ifBlank { "Function ${functionName}" }
+      }
     val functionDesc =
       if (isLongRunning) {
         if (baseDesc.isNotBlank()) {
@@ -129,7 +130,7 @@ class FunctionToolGenerator(
     }
     typeBuilder.addFunction(executeFun)
 
-    val declarationFun = buildDeclarationFunction(function, toolName, functionDesc)
+    val declarationFun = buildDeclarationFunction(function, toolName, functionDesc, isLongRunning)
     if (declarationFun != null) {
       typeBuilder.addFunction(declarationFun)
     } else {
@@ -764,6 +765,7 @@ class FunctionToolGenerator(
     function: KSFunctionDeclaration,
     toolName: String,
     functionDesc: String,
+    isLongRunning: Boolean,
   ): FunSpec? {
     val funSpec =
       FunSpec.builder("declaration")
@@ -798,10 +800,73 @@ class FunctionToolGenerator(
         ?.let { required ->
           funSpec.addCode("    required = listOf(${required.joinToString(", ") { "\"$it\"" }}),\n")
         }
-      funSpec.addCode("  )\n")
+      funSpec.addCode("  ),\n")
+    }
+
+    buildResponseSchema(function, isLongRunning)?.let { responseSchema ->
+      funSpec.addCode("  response = %L,\n", responseSchema)
     }
     funSpec.addCode(")\n")
     return funSpec.build()
+  }
+
+  /**
+   * Describes what the tool sends back, or `null` when the shape is not knowable. The generated
+   * `execute` wraps every returned value in `mapOf(RESULT_KEY to ...)`, so that wrapper is what
+   * gets described. `Unit`, a long-running tool and a type [describesFaithfully] rejects are left
+   * undeclared, and `result` is not marked required.
+   */
+  private fun buildResponseSchema(
+    function: KSFunctionDeclaration,
+    isLongRunning: Boolean,
+  ): CodeBlock? {
+    if (isLongRunning) return null
+    val returnType = function.returnType?.resolve() ?: return null
+    val returnTypeName = returnType.declaration.qualifiedName?.asString() ?: return null
+    if (returnTypeName == UNIT_QUALIFIED_NAME) return null
+    if (!describesFaithfully(returnType, mutableSetOf())) return null
+
+    val resultSchema =
+      buildSchema(returnType, "", mutableSetOf(), BaseTool.RESULT_KEY) ?: return null
+
+    return CodeBlock.builder()
+      .add("%T(\n", Schema::class.asClassName())
+      .indent()
+      .add("type = %T.OBJECT,\n", Type::class.asClassName())
+      .add(
+        "properties = mapOf(%T.RESULT_KEY to %L),\n",
+        BaseTool::class.asClassName(),
+        resultSchema,
+      )
+      .unindent()
+      .add(")")
+      .build()
+  }
+
+  /**
+   * Whether [buildSchema] can describe [type] without stating something untrue. It falls back to
+   * `STRING` for a type it does not recognise, which is a harmless hint on a parameter but a false
+   * promise on a response. The one shape that reaches here and hits that fallback is an `Any` list
+   * element.
+   */
+  private fun describesFaithfully(type: KSType, visited: MutableSet<String>): Boolean {
+    val qualifiedName = type.declaration.qualifiedName?.asString()
+    val typeDeclaration = type.declaration as? KSClassDeclaration
+    return when {
+      qualifiedName == LIST_QUALIFIED_NAME -> {
+        val element = type.arguments.firstOrNull()?.type?.resolve() ?: return false
+        element.declaration.qualifiedName?.asString() != ANY_QUALIFIED_NAME &&
+          describesFaithfully(element, visited)
+      }
+      typeDeclaration?.isDataClass() == true -> {
+        // `buildSchema` reports the cycle on its own walk, so stopping here is enough.
+        if (qualifiedName != null && !visited.add(qualifiedName)) return true
+        typeDeclaration.primaryConstructor?.parameters.orEmpty().all {
+          describesFaithfully(it.type.resolve(), visited)
+        }
+      }
+      else -> true
+    }
   }
 
   private fun extractFunctionDescription(docString: String?): String {
@@ -887,6 +952,11 @@ class FunctionToolGenerator(
     resultBuilder.indent()
     resultBuilder.add("type = %T.%L,\n", Type::class.asClassName(), typeEnum)
     resultBuilder.add("description = %S", description)
+    // A nullable Kotlin type really does send JSON null, both as an argument the model may omit a
+    // value for and as a returned value the runtime preserves, so the schema says so.
+    if (type.isMarkedNullable) {
+      resultBuilder.add(",\nnullable = true")
+    }
 
     if (typeDeclaration?.classKind == ClassKind.ENUM_CLASS) {
       val enumValues =

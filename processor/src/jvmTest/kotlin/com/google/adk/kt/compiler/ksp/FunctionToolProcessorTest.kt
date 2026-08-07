@@ -149,6 +149,103 @@ class FunctionToolProcessorTest {
   }
 
   @Test
+  fun declaration_toolReturningDataClass_describesTheResultWrapper() {
+    val declaration = ReturnDataClassToolTool().declaration()!!
+
+    val response = declaration.response!!
+    assertThat(response.type).isEqualTo(Type.OBJECT)
+    assertThat(response.required).isNull()
+
+    val result = response.properties!!["result"]!!
+    assertThat(result.type).isEqualTo(Type.OBJECT)
+    assertThat(result.properties!!["status"]?.type).isEqualTo(Type.STRING)
+    assertThat(result.properties!!["code"]?.type).isEqualTo(Type.INTEGER)
+    assertThat(result.required).containsExactly("status", "code")
+  }
+
+  @Test
+  fun declaration_toolReturningString_describesAStringResult() {
+    val declaration = SampleToolTool().declaration()!!
+
+    assertThat(declaration.response?.properties!!["result"]?.type).isEqualTo(Type.STRING)
+  }
+
+  @Test
+  fun declaration_toolReturningList_describesAnArrayResultWithItems() {
+    val declaration = ReturnListToolTool().declaration()!!
+
+    val result = declaration.response?.properties!!["result"]!!
+    assertThat(result.type).isEqualTo(Type.ARRAY)
+    assertThat(result.items?.type).isEqualTo(Type.STRING)
+  }
+
+  @Test
+  fun declaration_toolReturningEnum_describesItsValues() {
+    val declaration = ReturnEnumToolTool().declaration()!!
+
+    val result = declaration.response?.properties!!["result"]!!
+    assertThat(result.type).isEqualTo(Type.STRING)
+    assertThat(result.enum).containsExactly("OK", "FAIL")
+  }
+
+  @Test
+  fun declaration_toolReturningUnit_declaresNoResponse() {
+    assertThat(ReturnUnitToolTool().declaration()!!.response).isNull()
+  }
+
+  @Test
+  fun declaration_longRunningTool_declaresNoResponse() {
+    assertThat(LongRunningToolTool().declaration()!!.response).isNull()
+  }
+
+  @Test
+  fun declaration_nullableReturn_marksTheResultNullable() {
+    val result = ReturnNullableStringToolTool().declaration()!!.response?.properties!!["result"]!!
+    assertThat(result.type).isEqualTo(Type.STRING)
+    assertThat(result.nullable).isTrue()
+  }
+
+  @Test
+  fun declaration_dataClassWithNullableProperty_marksThatPropertyNullable() {
+    val result = ReturnNullablePropertyToolTool().declaration()!!.response?.properties!!["result"]!!
+    assertThat(result.properties!!["name"]?.nullable).isNull()
+    assertThat(result.properties!!["note"]?.nullable).isTrue()
+    // A nullable property is not required either.
+    assertThat(result.required).containsExactly("name")
+  }
+
+  @Test
+  fun declaration_nullableParameter_marksThatParameterNullable() {
+    val params = NullableParamToolTool().declaration()!!.parameters!!
+    assertThat(params.properties!!["required"]?.nullable).isNull()
+    assertThat(params.properties!!["optional"]?.nullable).isTrue()
+  }
+
+  @Test
+  fun declaration_toolReturningListOfNullableAny_declaresNoResponse() {
+    assertThat(ReturnListNullableAnyToolTool().declaration()!!.response).isNull()
+  }
+
+  @Test
+  fun declaration_dataClassHoldingAListOfAny_declaresNoResponse() {
+    // Only passes if `describesFaithfully` recurses through the data class's properties.
+    assertThat(ReturnBoxOfAnyToolTool().declaration()!!.response).isNull()
+  }
+
+  @Test
+  fun declaration_toolReturningListOfAny_declaresNoResponse() {
+    // The elements go out untouched, so the list really can hold mixed types.
+    assertThat(ReturnListAnyToolTool().declaration()!!.response).isNull()
+  }
+
+  @Test
+  fun declaration_toolReturningMapOfAny_stillDescribesAnObjectResult() {
+    val result = ReturnMapStringAnyToolTool().declaration()!!.response?.properties!!["result"]!!
+    assertThat(result.type).isEqualTo(Type.OBJECT)
+    assertThat(result.properties).isNull()
+  }
+
+  @Test
   fun compile_longRunningTool_generatesCorrectToolClass() {
     val tool = LongRunningToolTool()
 
@@ -469,6 +566,23 @@ fun returnDeeplyNestedMapStringAnyTool(): Map<String, Any> {
       )
   )
 }
+
+@Tool
+fun returnUnitTool() {
+  // Returns nothing on purpose: exercises the declaration's handling of a `Unit` function.
+}
+
+@Tool fun returnNullableStringTool(): String? = null
+
+data class Noted(val name: String, val note: String?)
+
+@Tool fun returnNullablePropertyTool(): Noted = Noted("a", null)
+
+@Tool fun nullableParamTool(required: String, optional: String?): String = "$required$optional"
+
+data class BoxOfAny(val label: String, val items: List<Any>)
+
+@Tool fun returnBoxOfAnyTool(): BoxOfAny = BoxOfAny("x", listOf(1, "two"))
 
 enum class MyResultEnum {
   OK,
