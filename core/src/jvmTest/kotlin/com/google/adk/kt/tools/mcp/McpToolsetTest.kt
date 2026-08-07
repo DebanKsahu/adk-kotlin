@@ -21,7 +21,14 @@ import com.google.adk.kt.tools.ToolFilter
 import com.google.adk.kt.tools.mcp.McpToolException.McpToolLoadingException
 import io.modelcontextprotocol.client.McpAsyncClient
 import io.modelcontextprotocol.spec.McpSchema
+import java.util.Collections
+import java.util.logging.Handler
+import java.util.logging.Level
+import java.util.logging.LogRecord
+import java.util.logging.Logger
+import java.util.logging.SimpleFormatter
 import kotlin.test.Test
+import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
@@ -136,6 +143,125 @@ class McpToolsetTest {
     val tools = mcpToolset.getTools()
 
     assertEquals(0, tools.size)
+  }
+
+  @Test
+  fun loadTools_withUseMcpResourcesTrueAndNoServerSupport_warnsThatTheToolsWereOmitted() =
+    runBlocking {
+      val mcpToolset = fakeToolset(noResourcesCapabilities, useMcpResources = true)
+
+      // Otherwise invisible: the model just never calls the tools the author configured.
+      val (_, warnings) = capturingWarnings { mcpToolset.getTools() }
+
+      val warning = warnings.single()
+      assertContains(warning, "useMcpResources")
+      assertContains(warning, "did not report the \"resources\" capability")
+      assertContains(warning, "load_mcp_resource")
+    }
+
+  @Test
+  fun loadTools_withUseMcpResourcesTrueAndUnknownCapabilities_omitsResourceToolsAndWarns() =
+    runBlocking {
+      // Null capabilities, as the SDK reports before initialization, must read as "no
+      // resources" rather than crash.
+      val mcpToolset = fakeToolset(useMcpResources = true)
+
+      val (tools, warnings) = capturingWarnings { mcpToolset.getTools() }
+
+      assertEquals(emptyList(), tools)
+      assertContains(warnings.single(), "did not report the \"resources\" capability")
+    }
+
+  @Test
+  fun getTools_withUseMcpResourcesTrueAndAllowList_keepsResourceToolsAndFiltersServerTools() =
+    runBlocking {
+      // An allow-list over server tools must not reach the resource tools, or it would silently
+      // undo useMcpResources.
+      val mcpToolset =
+        fakeToolset(
+          withResourcesCapabilities,
+          listOf("read_file", "write_file"),
+          ToolFilter.allowList("read_file"),
+          useMcpResources = true,
+        )
+
+      val (tools, warnings) = capturingWarnings { mcpToolset.getTools() }
+
+      assertEquals(
+        listOf(
+          "read_file",
+          "list_mcp_resources",
+          "load_mcp_resource",
+          "list_mcp_resource_templates",
+        ),
+        tools.map { it.name },
+      )
+      assertEquals(emptyList<String>(), warnings)
+    }
+
+  @Test
+  fun getTools_withUseMcpResourcesTrueAndPredicateRejectingEverything_keepsResourceTools() =
+    runBlocking {
+      // A context-aware filter must not make the resource tools come and go per turn.
+      val mcpToolset =
+        fakeToolset(
+          withResourcesCapabilities,
+          listOf("read_file"),
+          ToolFilter.Predicate { _, _ -> false },
+          useMcpResources = true,
+        )
+
+      val tools = mcpToolset.getTools()
+
+      assertEquals(
+        listOf("list_mcp_resources", "load_mcp_resource", "list_mcp_resource_templates"),
+        tools.map { it.name },
+      )
+    }
+
+  @Test
+  fun getTools_withUseMcpResourcesFalseAndAllowList_stillFiltersServerTools() = runBlocking {
+    val mcpToolset =
+      fakeToolset(
+        withResourcesCapabilities,
+        listOf("read_file", "write_file"),
+        ToolFilter.allowList("read_file"),
+      )
+
+    val tools = mcpToolset.getTools()
+
+    assertEquals(listOf("read_file"), tools.map { it.name })
+  }
+
+  @Test
+  fun loadTools_withUseMcpResourcesTrueAndServerSupport_doesNotWarn() = runBlocking {
+    val mcpToolset = fakeToolset(withResourcesCapabilities, useMcpResources = true)
+
+    val (_, warnings) = capturingWarnings { mcpToolset.getTools() }
+
+    assertEquals(emptyList<String>(), warnings)
+  }
+
+  @Test
+  fun getTools_withDynamicHeadersAndNoServerSupport_warnsOnlyOnce() = runBlocking {
+    // A headerProvider disables caching, so tools reload every turn; the warning must not.
+    val mcpToolset =
+      fakeToolset(noResourcesCapabilities, headerProvider = { emptyMap() }, useMcpResources = true)
+
+    val (loads, warnings) = capturingWarnings { List(3) { mcpToolset.getTools() } }
+
+    assertEquals(3, loads.size)
+    assertEquals(1, warnings.size, "expected one warning across three loads, got: $warnings")
+  }
+
+  @Test
+  fun loadTools_withUseMcpResourcesFalse_doesNotWarn() = runBlocking {
+    // Capabilities left unstubbed: the flag must short-circuit before they are read.
+    val mcpToolset = fakeToolset()
+
+    val (_, warnings) = capturingWarnings { mcpToolset.getTools() }
+
+    assertEquals(emptyList<String>(), warnings)
   }
 
   @Test
@@ -601,4 +727,71 @@ class McpToolsetTest {
     val tools = toolset.getTools()
     assertEquals(0, tools.size)
   }
+}
+
+/** Returns a minimal server-advertised tool named [name], for tests that only care about names. */
+private fun schemaTool(name: String): McpSchema.Tool =
+  McpSchema.Tool.builder().name(name).description("desc $name").inputSchema(null).build()
+
+/**
+ * Returns a toolset over a session advertising [serverToolNames] and [capabilities].
+ *
+ * A null [capabilities] is left unstubbed, so the session answers null as the SDK does before
+ * initialization.
+ */
+private fun fakeToolset(
+  capabilities: McpSchema.ServerCapabilities? = null,
+  serverToolNames: List<String> = emptyList(),
+  toolFilter: ToolFilter? = null,
+  headerProvider: (suspend (ReadonlyContext) -> Map<String, String>)? = null,
+  useMcpResources: Boolean = false,
+): McpToolset {
+  val session = mock<McpAsyncClient>()
+  capabilities?.let { whenever(session.serverCapabilities) doReturn it }
+
+  val toolsResponse = McpSchema.ListToolsResult(serverToolNames.map { schemaTool(it) }, null)
+  whenever(session.listTools()) doReturn mono { toolsResponse }
+
+  val sessionManager =
+    mock<SessionManager> { onBlocking { getSession(any(), anyOrNull()) } doReturn session }
+
+  return McpToolset(sessionManager, toolFilter, headerProvider, useMcpResources)
+}
+
+/**
+ * Runs [block] and returns its result with every warning [McpToolset] logged meanwhile.
+ *
+ * The facade delegates to Flogger, which is backed by `java.util.logging` and names the logger
+ * after the class. Top-level classes only: Flogger joins nested names with `.`, [Class.getName]
+ * with `$`.
+ */
+private suspend fun <T> capturingWarnings(block: suspend () -> T): Pair<T, List<String>> {
+  // publish() runs on whichever thread logged, so this cannot be a plain list.
+  val records = Collections.synchronizedList(mutableListOf<LogRecord>())
+  val handler =
+    object : Handler() {
+      override fun publish(record: LogRecord?) {
+        record?.let { records.add(it) }
+      }
+
+      override fun flush() {}
+
+      override fun close() {}
+    }
+
+  val logger = Logger.getLogger(McpToolset::class.java.name)
+  logger.addHandler(handler)
+  val result =
+    try {
+      block()
+    } finally {
+      logger.removeHandler(handler)
+    }
+
+  // A synchronized list still needs the lock to iterate. Flogger pre-formats, so formatMessage
+  // returns the message unchanged.
+  return result to
+    synchronized(records) {
+      records.filter { it.level == Level.WARNING }.map { SimpleFormatter().formatMessage(it) }
+    }
 }

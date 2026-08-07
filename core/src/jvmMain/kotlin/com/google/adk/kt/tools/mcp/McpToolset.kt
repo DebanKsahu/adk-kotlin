@@ -45,8 +45,10 @@ import kotlinx.coroutines.sync.withLock
  *   McpToolset.McpToolsetConfig(
  *       stdioConnectionParams =
  *         McpConnectionParameters.Stdio(
- *           command = "npx",
- *           args = listOf("-y", "@modelcontextprotocol/server-filesystem"),
+ *           serverParameters =
+ *             ServerParameters.builder("npx")
+ *               .args("-y", "@modelcontextprotocol/server-filesystem")
+ *               .build()
  *         ),
  *       toolFilter = ToolFilter.allowList("read_file", "list_directory"),
  *     )
@@ -65,12 +67,25 @@ internal constructor(
 ) : Toolset {
 
   private val toolsMutex = Mutex()
-  private var cachedTools: List<BaseTool>? = null
+  private var cachedTools: LoadedTools? = null
 
-  override suspend fun getTools(readonlyContext: ReadonlyContext?): List<BaseTool> =
-    initAndGetTools(readonlyContext).filter { toolFilter.isToolSelected(it, readonlyContext) }
+  /** Guarded by [toolsMutex]; keeps the missing-capability warning to one per toolset. */
+  private var warnedResourcesUnsupported = false
 
-  private suspend fun initAndGetTools(readonlyContext: ReadonlyContext?): List<BaseTool> =
+  /**
+   * The server's tools, which [toolFilter] selects from, and the resource tools, which it skips.
+   */
+  private class LoadedTools(val serverTools: List<BaseTool>, val resourceTools: List<BaseTool>)
+
+  override suspend fun getTools(readonlyContext: ReadonlyContext?): List<BaseTool> {
+    val loaded = initAndGetTools(readonlyContext)
+    // Appended after filtering so toolFilter cannot silently undo useMcpResources, as in Python's
+    // get_tools (mcp_toolset.py).
+    return loaded.serverTools.filter { toolFilter.isToolSelected(it, readonlyContext) } +
+      loaded.resourceTools
+  }
+
+  private suspend fun initAndGetTools(readonlyContext: ReadonlyContext?): LoadedTools =
     toolsMutex.withLock {
       if (headerProvider == null) {
         // Cache tools only if headers are static (headerProvider is null).
@@ -85,7 +100,7 @@ internal constructor(
     readonlyContext: ReadonlyContext?,
     times: Int = DEFAULT_RETRY_TIMES,
     delayMs: Long = DEFAULT_RETRY_DELAY_MS,
-  ): List<BaseTool> {
+  ): LoadedTools {
     val headers = readonlyContext?.let { headerProvider?.invoke(it) } ?: emptyMap()
     var session: McpAsyncClient? = null
     for (attempt in 1..times) {
@@ -110,30 +125,48 @@ internal constructor(
   private suspend fun loadTools(
     session: McpAsyncClient,
     headers: Map<String, String>,
-  ): List<BaseTool> {
+  ): LoadedTools {
     val toolsResponse = session.listTools().awaitSingle()
-    val tools: MutableList<BaseTool> =
-      toolsResponse
-        .tools()
-        .map {
-          McpTool(
-            name = it.name(),
-            description = it.description() ?: "",
-            mcpSchemaTool = it,
-            mcpSessionManager = mcpSessionManager,
-            headers = headers,
-          )
-        }
-        .toMutableList()
+    val serverTools: List<BaseTool> =
+      toolsResponse.tools().map {
+        McpTool(
+          name = it.name(),
+          description = it.description() ?: "",
+          mcpSchemaTool = it,
+          mcpSessionManager = mcpSessionManager,
+          headers = headers,
+        )
+      }
 
-    val capabilities = session.serverCapabilities
-
-    if (useMcpResources && capabilities?.resources() != null) {
-      tools.add(ListMcpResourcesTool(this))
-      tools.add(LoadMcpResourceTool(this, maxMcpResourceLength))
-      tools.add(ListMcpResourceTemplatesTool(this))
+    if (!useMcpResources) {
+      return LoadedTools(serverTools, emptyList())
     }
-    return tools
+
+    // Built before the capability check so the warning can name them without repeating literals.
+    val resourceTools =
+      listOf(
+        ListMcpResourcesTool(this),
+        LoadMcpResourceTool(this, maxMcpResourceLength),
+        ListMcpResourceTemplatesTool(this),
+      )
+
+    // Withheld, not exposed-and-broken: the MCP client rejects every resource call against such a
+    // server, and each one costs three attempts that evict the pooled session.
+    if (session.serverCapabilities?.resources() != null) {
+      return LoadedTools(serverTools, resourceTools)
+    }
+
+    // Once only: with a headerProvider the tools reload every turn, and the answer never changes.
+    if (!warnedResourcesUnsupported) {
+      warnedResourcesUnsupported = true
+      // "did not report", not "does not advertise": null capabilities means the server never
+      // answered, which is not the same as declining.
+      logger.warn {
+        "useMcpResources is enabled, but the MCP server did not report the \"resources\" " +
+          "capability, so ${resourceTools.joinToString { it.name }} are not exposed to the agent."
+      }
+    }
+    return LoadedTools(serverTools, emptyList())
   }
 
   /**
@@ -327,13 +360,19 @@ internal constructor(
    * @property sseConnectionParams Connection parameters for an MCP server reached over SSE.
    * @property streamableHttpConnectionParams Connection parameters for an MCP server reached over
    *   the Streamable HTTP transport.
-   * @property toolFilter Optional filter selecting which tools are exposed to the agent. Use
-   *   [ToolFilter.AllowList] (or the [ToolFilter.allowList] helper) to keep tools by name, or
-   *   [ToolFilter.Predicate] for context-aware selection that can consult the [ReadonlyContext].
-   *   When `null`, all tools advertised by the server are exposed.
+   * @property toolFilter Optional filter selecting which of the tools advertised by the server are
+   *   exposed to the agent. Use [ToolFilter.AllowList] (or the [ToolFilter.allowList] helper) to
+   *   keep tools by name, or [ToolFilter.Predicate] for context-aware selection that can consult
+   *   the [ReadonlyContext]. When `null`, all tools advertised by the server are exposed. The
+   *   resource tools added by [useMcpResources] are ADK's own and are not filtered.
    * @property useMcpResources When `true`, resource-related tools (`list_mcp_resources`,
    *   `list_mcp_resource_templates`, `load_mcp_resource`) are added to the toolset, granting the
-   *   agent access to MCP resources exposed by the server. Defaults to `false`.
+   *   agent access to MCP resources exposed by the server. They are added only if the server
+   *   reports the `resources` capability during the handshake; against a server that does not, they
+   *   are omitted and a warning is logged, because the MCP client rejects the requests those tools
+   *   would make. [toolFilter] does not apply to them: it selects among the tools the server
+   *   advertises, so enabling this flag and filtering the server's tools are independent choices.
+   *   Defaults to `false`.
    * @property maxMcpResourceLength Maximum length, in characters, of a single resource payload
    *   returned by `load_mcp_resource`. Longer payloads are truncated.
    */
