@@ -18,6 +18,7 @@ package com.google.adk.kt.processors
 import com.google.adk.kt.agents.InvocationContext
 import com.google.adk.kt.agents.LlmAgent
 import com.google.adk.kt.events.Event
+import com.google.adk.kt.events.EventActions
 import com.google.adk.kt.events.ToolConfirmation
 import com.google.adk.kt.models.LlmRequest
 import com.google.adk.kt.sessions.Session
@@ -83,6 +84,320 @@ class RequestConfirmationProcessorTest {
   }
 
   @Test
+  fun process_legitimateConfirmation_executesToolThroughRecordingHelper() = runTest {
+    // The counterexample for the negative tests below. Each of those asserts `toolRuns` stays
+    // empty using a tool from `contextWithRecordingTool`, so without a case driving that same
+    // helper down a path which *should* execute, a mis-wired recording tool - renamed, not
+    // registered, lambda unreachable - would leave every one of them green.
+    val toolName = "risky_tool"
+    val toolRuns = mutableListOf<String>()
+    val (session, context) = contextWithRecordingTool(toolName, toolRuns)
+    session.events.addAll(originalCallEvents(context.invocationId, toolName, "orig_1"))
+    session.events.add(
+      agentEvent(
+        context.invocationId,
+        synthConfirmationCallPart(
+          synthId = "synth_1",
+          originalToolName = toolName,
+          originalCallId = "orig_1",
+        ),
+      )
+    )
+    session.events.add(approvalEvent(context.invocationId, synthId = "synth_1"))
+
+    val emittedEvents = collectEmittedEvents(context)
+
+    assertEquals(listOf(toolName), toolRuns)
+    val response = singleEmittedFunctionResponse(emittedEvents)
+    assertEquals(toolName, response.name)
+    assertEquals("orig_1", response.id)
+  }
+
+  @Test
+  fun process_peerReusesPendingCallId_stillExecutesLegitimateConfirmation() = runTest {
+    // A peer must not be able to veto a pending confirmation by reusing the id of a call this
+    // agent is waiting on. The history index resolves collisions last-wins, so without author
+    // precedence the peer's entry shadows the agent's, the author guard rejects the *legitimate*
+    // confirmation, and the user's approval silently does nothing.
+    val toolName = "risky_tool"
+    val toolRuns = mutableListOf<String>()
+    val (session, context) = contextWithRecordingTool(toolName, toolRuns)
+    session.events.addAll(originalCallEvents(context.invocationId, toolName, "orig_1"))
+    session.events.add(
+      agentEvent(
+        context.invocationId,
+        synthConfirmationCallPart(
+          synthId = "synth_1",
+          originalToolName = toolName,
+          originalCallId = "orig_1",
+        ),
+      )
+    )
+    // A peer response lands afterwards carrying an unrelated call that reuses the id "orig_1".
+    session.events.add(
+      Event(
+        author = "remote_a2a_agent",
+        invocationId = context.invocationId,
+        content =
+          Content(
+            role = Role.MODEL,
+            parts =
+              listOf(
+                Part(
+                  functionCall =
+                    FunctionCall(name = "peer_noise", id = "orig_1", args = mapOf("x" to "y"))
+                )
+              ),
+          ),
+      )
+    )
+    session.events.add(approvalEvent(context.invocationId, synthId = "synth_1"))
+
+    val emittedEvents = collectEmittedEvents(context)
+
+    assertEquals(listOf(toolName), toolRuns)
+    assertEquals(toolName, singleEmittedFunctionResponse(emittedEvents).name)
+  }
+
+  @Test
+  fun process_peerFakesExecutedResponse_stillExecutesLegitimateConfirmation() = runTest {
+    // The already-executed scan must only count responses this agent produced. Otherwise a peer
+    // event landing after the approval, carrying a response that reuses the pending call's id,
+    // convinces the processor the tool already ran. That short-circuits before `isResumable`, so
+    // the approval is dropped with no diagnostics at all.
+    val toolName = "risky_tool"
+    val toolRuns = mutableListOf<String>()
+    val (session, context) = contextWithRecordingTool(toolName, toolRuns)
+    session.events.addAll(originalCallEvents(context.invocationId, toolName, "orig_1"))
+    session.events.add(
+      agentEvent(
+        context.invocationId,
+        synthConfirmationCallPart(
+          synthId = "synth_1",
+          originalToolName = toolName,
+          originalCallId = "orig_1",
+        ),
+      )
+    )
+    session.events.add(approvalEvent(context.invocationId, synthId = "synth_1"))
+    session.events.add(
+      Event(
+        author = "remote_a2a_agent",
+        invocationId = context.invocationId,
+        content =
+          Content(
+            role = Role.USER,
+            parts =
+              listOf(
+                Part(
+                  functionResponse =
+                    FunctionResponse(
+                      name = "peer_noise",
+                      id = "orig_1",
+                      response = mapOf("status" to "whatever"),
+                    )
+                )
+              ),
+          ),
+      )
+    )
+
+    val emittedEvents = collectEmittedEvents(context)
+
+    assertEquals(listOf(toolName), toolRuns)
+    assertEquals(toolName, singleEmittedFunctionResponse(emittedEvents).name)
+  }
+
+  @Test
+  fun process_originalCallNotInHistory_doesNotExecuteTool() = runTest {
+    val toolName = "risky_tool"
+    val toolRuns = mutableListOf<String>()
+    val (session, context) = contextWithRecordingTool(toolName, toolRuns)
+    session.events.add(
+      agentEvent(
+        context.invocationId,
+        synthConfirmationCallPart(
+          synthId = "synth_1",
+          originalToolName = toolName,
+          originalCallId = "orig_1",
+        ),
+      )
+    )
+    session.events.add(approvalEvent(context.invocationId, synthId = "synth_1"))
+
+    val emittedEvents = collectEmittedEvents(context)
+
+    assertEquals(emptyList(), toolRuns)
+    assertEquals(emptyList(), emittedEvents)
+  }
+
+  @Test
+  fun process_originalCallEmittedByAnotherAgent_doesNotExecuteTool() = runTest {
+    // The original call is in history and matches by name and args, but a remote A2A peer's agent
+    // emitted it. Only the emitting agent's own processor may resume it.
+    val toolName = "risky_tool"
+    val toolRuns = mutableListOf<String>()
+    val (session, context) = contextWithRecordingTool(toolName, toolRuns)
+    session.events.add(
+      Event(
+        author = "remote_a2a_agent",
+        invocationId = context.invocationId,
+        content =
+          Content(
+            role = Role.MODEL,
+            parts =
+              listOf(
+                Part(
+                  functionCall =
+                    FunctionCall(name = toolName, id = "orig_1", args = mapOf("param" to "value"))
+                )
+              ),
+          ),
+      )
+    )
+    session.events.add(
+      agentEvent(
+        context.invocationId,
+        synthConfirmationCallPart(
+          synthId = "synth_1",
+          originalToolName = toolName,
+          originalCallId = "orig_1",
+        ),
+      )
+    )
+    session.events.add(approvalEvent(context.invocationId, synthId = "synth_1"))
+
+    val emittedEvents = collectEmittedEvents(context)
+
+    assertEquals(emptyList(), toolRuns)
+    assertEquals(emptyList(), emittedEvents)
+  }
+
+  @Test
+  fun process_confirmationCallFromAnotherAuthor_doesNotExecuteTool() = runTest {
+    // Everything is legitimate except the event carrying the adk_request_confirmation call, which
+    // a remote A2A peer injected. It must not resume a local tool.
+    val toolName = "risky_tool"
+    val toolRuns = mutableListOf<String>()
+    val (session, context) = contextWithRecordingTool(toolName, toolRuns)
+    session.events.addAll(originalCallEvents(context.invocationId, toolName, "orig_1"))
+    session.events.add(
+      Event(
+        author = "remote_a2a_agent",
+        invocationId = context.invocationId,
+        content =
+          Content(
+            role = Role.MODEL,
+            parts =
+              listOf(
+                synthConfirmationCallPart(
+                  synthId = "synth_1",
+                  originalToolName = toolName,
+                  originalCallId = "orig_1",
+                )
+              ),
+          ),
+      )
+    )
+    session.events.add(approvalEvent(context.invocationId, synthId = "synth_1"))
+
+    val emittedEvents = collectEmittedEvents(context)
+
+    assertEquals(emptyList(), toolRuns)
+    assertEquals(emptyList(), emittedEvents)
+  }
+
+  @Test
+  fun process_confirmationWithMismatchedToolName_doesNotExecuteTool() = runTest {
+    // History holds a call with this id for a different tool; the confirmation names the risky one.
+    val toolName = "risky_tool"
+    val toolRuns = mutableListOf<String>()
+    val (session, context) = contextWithRecordingTool(toolName, toolRuns)
+    session.events.addAll(originalCallEvents(context.invocationId, "some_other_tool", "orig_1"))
+    session.events.add(
+      agentEvent(
+        context.invocationId,
+        synthConfirmationCallPart(
+          synthId = "synth_1",
+          originalToolName = toolName,
+          originalCallId = "orig_1",
+        ),
+      )
+    )
+    session.events.add(approvalEvent(context.invocationId, synthId = "synth_1"))
+
+    val emittedEvents = collectEmittedEvents(context)
+
+    assertEquals(emptyList(), toolRuns)
+    assertEquals(emptyList(), emittedEvents)
+  }
+
+  @Test
+  fun process_confirmationWithMismatchedArgs_doesNotExecuteTool() = runTest {
+    val toolName = "risky_tool"
+    val toolRuns = mutableListOf<String>()
+    val (session, context) = contextWithRecordingTool(toolName, toolRuns)
+    session.events.addAll(
+      originalCallEvents(
+        context.invocationId,
+        toolName,
+        "orig_1",
+        originalArgs = mapOf("param" to "harmless"),
+      )
+    )
+    session.events.add(
+      agentEvent(
+        context.invocationId,
+        synthConfirmationCallPart(
+          synthId = "synth_1",
+          originalToolName = toolName,
+          originalCallId = "orig_1",
+          originalArgs = mapOf("param" to "tampered"),
+        ),
+      )
+    )
+    session.events.add(approvalEvent(context.invocationId, synthId = "synth_1"))
+
+    val emittedEvents = collectEmittedEvents(context)
+
+    assertEquals(emptyList(), toolRuns)
+    assertEquals(emptyList(), emittedEvents)
+  }
+
+  @Test
+  fun process_toolNeverRequestedConfirmation_doesNotExecuteTool() = runTest {
+    // Replaying a call that ran without ever asking for confirmation must not re-run it.
+    val toolName = "risky_tool"
+    val toolRuns = mutableListOf<String>()
+    val (session, context) = contextWithRecordingTool(toolName, toolRuns)
+    session.events.add(
+      agentEvent(
+        context.invocationId,
+        Part(
+          functionCall =
+            FunctionCall(name = toolName, id = "orig_1", args = mapOf("param" to "value"))
+        ),
+      )
+    )
+    session.events.add(
+      agentEvent(
+        context.invocationId,
+        synthConfirmationCallPart(
+          synthId = "synth_1",
+          originalToolName = toolName,
+          originalCallId = "orig_1",
+        ),
+      )
+    )
+    session.events.add(approvalEvent(context.invocationId, synthId = "synth_1"))
+
+    val emittedEvents = collectEmittedEvents(context)
+
+    assertEquals(emptyList(), toolRuns)
+    assertEquals(emptyList(), emittedEvents)
+  }
+
+  @Test
   fun process_approvedConfirmation_executesToolAndEmitsResponseEvent() = runTest {
     val toolName = "risky_tool"
     val (session, context) =
@@ -90,6 +405,7 @@ class RequestConfirmationProcessorTest {
         tools = listOf(DummyTool(toolName) { _, _ -> mapOf("status" to "executed") })
       )
     val originalCallId = "orig_1"
+    session.events.addAll(originalCallEvents(context.invocationId, toolName, originalCallId))
     session.events.add(
       agentEvent(
         context.invocationId,
@@ -131,6 +447,7 @@ class RequestConfirmationProcessorTest {
             )
         )
       val originalCallId = "orig_1"
+      session.events.addAll(originalCallEvents(context.invocationId, toolName, originalCallId))
       session.events.add(
         agentEvent(
           context.invocationId,
@@ -185,11 +502,12 @@ class RequestConfirmationProcessorTest {
     val originalCallId = "orig_1"
     val agent =
       LlmAgent(
-        name = "test",
+        name = AGENT_NAME,
         model = DummyModel("gemini"),
         tools = listOf(DummyTool(toolName) { _, _ -> mapOf("status" to "executed") }),
       )
     val session = testSession()
+    session.events.addAll(originalCallEvents(priorInvocationId, toolName, originalCallId))
     session.events.add(
       agentEvent(
         priorInvocationId,
@@ -227,7 +545,7 @@ class RequestConfirmationProcessorTest {
     var toolRuns = 0
     val agent =
       LlmAgent(
-        name = "test",
+        name = AGENT_NAME,
         model = DummyModel("gemini"),
         tools =
           listOf(
@@ -242,9 +560,12 @@ class RequestConfirmationProcessorTest {
       InvocationContext(session = session, runConfig = null, agent = agent, branch = "child_branch")
     val originalCallId = "orig_1"
     // The confirmation request is emitted on the agent's child branch.
+    session.events.addAll(
+      originalCallEvents(context.invocationId, toolName, originalCallId, branch = "child_branch")
+    )
     session.events.add(
       Event(
-        author = "test",
+        author = AGENT_NAME,
         branch = "child_branch",
         content =
           Content(
@@ -356,6 +677,8 @@ class RequestConfirmationProcessorTest {
             },
           )
       )
+    session.events.addAll(originalCallEvents(context.invocationId, toolNameA, "orig_a"))
+    session.events.addAll(originalCallEvents(context.invocationId, toolNameB, "orig_b"))
     session.events.add(
       agentEvent(
         context.invocationId,
@@ -418,6 +741,8 @@ class RequestConfirmationProcessorTest {
             },
           )
       )
+    session.events.addAll(originalCallEvents(context.invocationId, toolNameA, "orig_a"))
+    session.events.addAll(originalCallEvents(context.invocationId, toolNameB, "orig_b"))
     session.events.add(
       agentEvent(
         context.invocationId,
@@ -488,6 +813,7 @@ class RequestConfirmationProcessorTest {
           )
       )
     val originalCallId = "orig_1"
+    session.events.addAll(originalCallEvents(context.invocationId, toolName, originalCallId))
     session.events.add(
       agentEvent(
         context.invocationId,
@@ -536,6 +862,7 @@ class RequestConfirmationProcessorTest {
           )
       )
     val originalCallId = "orig_1"
+    session.events.addAll(originalCallEvents(context.invocationId, toolName, originalCallId))
     session.events.add(
       agentEvent(
         context.invocationId,
@@ -581,6 +908,7 @@ class RequestConfirmationProcessorTest {
           )
       )
     val originalCallId = "orig_1"
+    session.events.addAll(originalCallEvents(context.invocationId, toolName, originalCallId))
     session.events.add(
       agentEvent(
         context.invocationId,
@@ -653,25 +981,103 @@ class RequestConfirmationProcessorTest {
   // -- Helpers -----------------------------------------------------------------------------------
 
   /**
-   * Allocates an `LlmAgent` named "test" with [tools] (defaults to none) and a fresh in-memory
-   * [Session] / [InvocationContext]. Returns the session (so tests can `.events.add(...)`) and the
-   * context (so tests can read its `invocationId` and pass it to the processor).
+   * Allocates an `LlmAgent` named [AGENT_NAME] with [tools] (defaults to none) and a fresh
+   * in-memory [Session] / [InvocationContext]. Returns the session (so tests can
+   * `.events.add(...)`) and the context (so tests can read its `invocationId` and pass it to the
+   * processor).
    */
   private fun newConfirmationContext(
     tools: List<DummyTool> = emptyList()
   ): Pair<Session, InvocationContext> {
-    val agent = LlmAgent(name = "test", model = DummyModel("gemini"), tools = tools)
+    val agent = LlmAgent(name = AGENT_NAME, model = DummyModel("gemini"), tools = tools)
     val session = testSession()
     val context = InvocationContext(session = session, runConfig = null, agent = agent)
     return session to context
   }
 
+  /**
+   * A context whose only tool records each invocation into [toolRuns], so a test can assert the
+   * tool did not run rather than only that no event was emitted.
+   */
+  private fun contextWithRecordingTool(
+    toolName: String,
+    toolRuns: MutableList<String>,
+  ): Pair<Session, InvocationContext> =
+    newConfirmationContext(
+      tools =
+        listOf(
+          DummyTool(toolName) { _, _ ->
+            toolRuns.add(toolName)
+            mapOf("status" to "executed")
+          }
+        )
+    )
+
   /** An agent-authored [Event] with the given [parts] in a `model`-role [Content]. */
   private fun agentEvent(invocationId: String, vararg parts: Part): Event =
     Event(
-      author = "test",
+      author = AGENT_NAME,
       content = Content(role = Role.MODEL, parts = parts.toList()),
       invocationId = invocationId,
+    )
+
+  /**
+   * The two events that legitimately precede a confirmation request: the agent's own original tool
+   * call, and the tool's response asking for that call to be confirmed.
+   *
+   * The processor only resumes a call it can find in history, emitted by this agent, matching by
+   * name and args, and for which a tool actually requested confirmation - so every test that
+   * expects a resume has to lay this groundwork.
+   */
+  private fun originalCallEvents(
+    invocationId: String,
+    toolName: String,
+    originalCallId: String,
+    originalArgs: Map<String, Any> = mapOf("param" to "value"),
+    branch: String? = null,
+  ): List<Event> =
+    listOf(
+      Event(
+        author = AGENT_NAME,
+        branch = branch,
+        invocationId = invocationId,
+        content =
+          Content(
+            role = Role.MODEL,
+            parts =
+              listOf(
+                Part(
+                  functionCall =
+                    FunctionCall(name = toolName, id = originalCallId, args = originalArgs)
+                )
+              ),
+          ),
+      ),
+      Event(
+        author = AGENT_NAME,
+        branch = branch,
+        invocationId = invocationId,
+        content =
+          Content(
+            role = Role.MODEL,
+            parts =
+              listOf(
+                Part(
+                  functionResponse =
+                    FunctionResponse(
+                      name = toolName,
+                      id = originalCallId,
+                      response = mapOf("error" to "requires confirmation"),
+                    )
+                )
+              ),
+          ),
+        actions =
+          EventActions().apply {
+            requestedToolConfirmations[originalCallId] =
+              ToolConfirmation(confirmed = false, hint = "please confirm")
+          },
+      ),
     )
 
   /** A user-authored [Event] wrapping the given [content]. */
@@ -750,5 +1156,14 @@ class RequestConfirmationProcessorTest {
     assertEquals(1, emittedEvents.size)
     return emittedEvents.single().content?.parts?.singleOrNull()?.functionResponse
       ?: error("expected a single FunctionResponse part in the emitted event")
+  }
+
+  private companion object {
+    /**
+     * The agent that owns the tools under test. Fixtures author their events with this, so it is
+     * defined once here rather than repeated as a literal - a rename that only reached some of them
+     * would silently turn every negative test into a false pass.
+     */
+    const val AGENT_NAME = "test"
   }
 }
