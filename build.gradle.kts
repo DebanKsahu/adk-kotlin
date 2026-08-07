@@ -119,6 +119,8 @@ subprojects {
     compilerOptions {
       optIn.add("kotlin.time.ExperimentalTime")
       freeCompilerArgs.add("-Xskip-metadata-version-check")
+      // `expect`/`actual` classes are Beta (KT-61573); GoogleCredentials relies on them.
+      freeCompilerArgs.add("-Xexpect-actual-classes")
       // Compile with the current Kotlin toolchain but emit metadata/bytecode
       // for kotlinCompatVersion so downstream consumers aren't forced to upgrade.
       languageVersion.set(kotlinCompatVersion)
