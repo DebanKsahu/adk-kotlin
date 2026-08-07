@@ -21,8 +21,8 @@ import android.net.Uri
 import androidx.core.net.toUri
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.google.adk.kt.mlkit.GenaiPromptConversions.buildLlmResponse
 import com.google.adk.kt.mlkit.GenaiPromptConversions.toGenerateContentRequest
-import com.google.adk.kt.mlkit.GenaiPromptConversions.toLlmResponse
 import com.google.adk.kt.models.LlmRequest
 import com.google.adk.kt.types.Blob
 import com.google.adk.kt.types.Content
@@ -428,76 +428,91 @@ class GenaiPromptConversionsTest {
     assertThat(generateContentRequest.promptPrefix).isNull()
   }
 
+  /** STOP is the normal completion, so the text passes through unflagged. */
   @Test
-  fun toLlmResponse_candidateWithStopReason_success() {
+  fun buildLlmResponse_stopFinishReason_hasTextAndNoError() {
     val response =
-      AggregatedResponse(
-        candidates =
-          listOf(AggregatedCandidate(text = "Hello World", finishReason = MlKitFinishReason.STOP))
-      )
-    val llmResponse = response.toLlmResponse()
-    assertThat(llmResponse.content?.parts?.firstOrNull()?.text).isEqualTo("Hello World")
-    assertThat(llmResponse.finishReason).isEqualTo(FinishReason.STOP)
-    assertThat(llmResponse.errorMessage).isNull()
-  }
-
-  @Test
-  fun toLlmResponse_candidateWithNonStopReason_hasErrorMessage() {
-    val response =
-      AggregatedResponse(
-        candidates =
-          listOf(
-            AggregatedCandidate(text = "Hello World", finishReason = MlKitFinishReason.MAX_TOKENS)
-          )
-      )
-    val llmResponse = response.toLlmResponse()
-    assertThat(llmResponse.content?.parts?.firstOrNull()?.text).isEqualTo("Hello World")
-    assertThat(llmResponse.finishReason).isEqualTo(FinishReason.MAX_TOKENS)
-    assertThat(llmResponse.errorMessage).contains("MAX_TOKENS")
-  }
-
-  @Test
-  fun toLlmResponse_noFinishReason_success() {
-    val response =
-      AggregatedResponse(
-        candidates = listOf(AggregatedCandidate(text = "Hello World", finishReason = null))
+      buildLlmResponse(
+        text = "Hello World",
+        mlKitFinishReason = MlKitFinishReason.STOP,
+        hasThoughtProcess = false,
       )
 
-    val llmResponse = response.toLlmResponse()
-    assertThat(llmResponse.content?.parts?.firstOrNull()?.text).isEqualTo("Hello World")
-    assertThat(llmResponse.finishReason).isNull()
-    assertThat(llmResponse.errorMessage).isNull()
+    assertThat(response.content?.parts?.firstOrNull()?.text).isEqualTo("Hello World")
+    assertThat(response.finishReason).isEqualTo(FinishReason.STOP)
+    assertThat(response.errorMessage).isNull()
   }
 
+  /** Generated content is attributed to the model role, not the user. */
   @Test
-  fun toLlmResponse_otherFinishReason_hasErrorMessage() {
+  fun buildLlmResponse_contentRoleIsModel() {
     val response =
-      AggregatedResponse(
-        candidates =
-          listOf(AggregatedCandidate(text = "Hello World", finishReason = MlKitFinishReason.OTHER))
+      buildLlmResponse(
+        text = "Hello World",
+        mlKitFinishReason = MlKitFinishReason.STOP,
+        hasThoughtProcess = false,
       )
-    val llmResponse = response.toLlmResponse()
-    assertThat(llmResponse.content?.parts?.firstOrNull()?.text).isEqualTo("Hello World")
-    assertThat(llmResponse.finishReason).isEqualTo(FinishReason.OTHER)
-    assertThat(llmResponse.errorMessage).contains("OTHER")
+
+    assertThat(response.content?.role).isEqualTo("model")
   }
 
+  /** Truncated output keeps its text but is still flagged. */
   @Test
-  fun toLlmResponse_roleIsModel() {
+  fun buildLlmResponse_maxTokensFinishReason_hasErrorMessage() {
     val response =
-      AggregatedResponse(
-        candidates = listOf(AggregatedCandidate(text = "Hello World", finishReason = null))
+      buildLlmResponse(
+        text = "Hello World",
+        mlKitFinishReason = MlKitFinishReason.MAX_TOKENS,
+        hasThoughtProcess = false,
       )
-    val llmResponse = response.toLlmResponse()
-    assertThat(llmResponse.content?.role).isEqualTo("model")
+
+    assertThat(response.content?.parts?.firstOrNull()?.text).isEqualTo("Hello World")
+    assertThat(response.finishReason).isEqualTo(FinishReason.MAX_TOKENS)
+    assertThat(response.errorMessage).contains("MAX_TOKENS")
   }
 
+  /** Any finish reason other than STOP is surfaced as an error. */
   @Test
-  fun toLlmResponse_noCandidates_hasErrorMessage() {
-    val response = AggregatedResponse(candidates = emptyList())
-    val llmResponse = response.toLlmResponse()
-    assertThat(llmResponse.content).isNull()
-    assertThat(llmResponse.finishReason).isNull()
-    assertThat(llmResponse.errorMessage).isEqualTo("No candidates returned.")
+  fun buildLlmResponse_otherFinishReason_hasErrorMessage() {
+    val response =
+      buildLlmResponse(
+        text = "Hello World",
+        mlKitFinishReason = MlKitFinishReason.OTHER,
+        hasThoughtProcess = false,
+      )
+
+    assertThat(response.finishReason).isEqualTo(FinishReason.OTHER)
+    assertThat(response.errorMessage).contains("OTHER")
+  }
+
+  /** Streaming chunks arrive without a finish reason and must not be flagged. */
+  @Test
+  fun buildLlmResponse_noFinishReason_hasNoErrorMessage() {
+    val response =
+      buildLlmResponse(text = "Hello World", mlKitFinishReason = null, hasThoughtProcess = false)
+
+    assertThat(response.content?.parts?.firstOrNull()?.text).isEqualTo("Hello World")
+    assertThat(response.finishReason).isNull()
+    assertThat(response.errorMessage).isNull()
+  }
+
+  /** A response with neither text nor thoughts is an error. */
+  @Test
+  fun buildLlmResponse_noCandidate_hasErrorMessage() {
+    val response =
+      buildLlmResponse(text = null, mlKitFinishReason = null, hasThoughtProcess = false)
+
+    assertThat(response.content).isNull()
+    assertThat(response.finishReason).isNull()
+    assertThat(response.errorMessage).isEqualTo("No candidates returned.")
+  }
+
+  /** ML Kit's thought chunks carry no candidate, so they are not errors. */
+  @Test
+  fun buildLlmResponse_noCandidateButThoughtProcess_hasNoErrorMessage() {
+    val response = buildLlmResponse(text = null, mlKitFinishReason = null, hasThoughtProcess = true)
+
+    assertThat(response.content).isNull()
+    assertThat(response.errorMessage).isNull()
   }
 }

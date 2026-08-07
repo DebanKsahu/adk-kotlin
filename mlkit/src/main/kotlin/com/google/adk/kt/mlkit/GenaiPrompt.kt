@@ -16,6 +16,7 @@
 
 package com.google.adk.kt.mlkit
 
+import com.google.adk.kt.annotations.FrameworkInternalApi
 import com.google.adk.kt.logging.LoggerFactory
 import com.google.adk.kt.mlkit.GenaiPromptConversions.toGenerateContentRequest
 import com.google.adk.kt.mlkit.GenaiPromptConversions.toLlmResponse
@@ -23,6 +24,7 @@ import com.google.adk.kt.mlkit.GenaiPromptTracing.format
 import com.google.adk.kt.models.LlmRequest
 import com.google.adk.kt.models.LlmResponse
 import com.google.adk.kt.models.Model
+import com.google.adk.kt.models.StreamingResponseAggregator
 import com.google.mlkit.genai.prompt.GenerativeModel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -65,35 +67,23 @@ private constructor(val generativeModel: GenerativeModel, override val name: Str
       .also { logger.trace { format(it) } }
   }
 
+  /** Emits every chunk as a partial [LlmResponse], then the aggregated final one. */
+  @OptIn(FrameworkInternalApi::class)
   private fun generateContentStreaming(request: LlmRequest): Flow<LlmResponse> = flow {
-    val responseAggregator = GenerateContentResponseAggregator()
+    val aggregator = StreamingResponseAggregator()
     generativeModel
       .generateContentStream(
         request.toGenerateContentRequest().also { logger.trace { format(it) } }
       )
-      .collect {
-        responseAggregator.processResponse(
-          it.toAggregatedResponse().also { aggregatedResponse ->
-            logger.trace { "partial response: ${format(aggregatedResponse)}" }
-          }
-        )
-        emit(
-          it
-            .also { response -> logger.trace { "partial response: ${format(response)}" } }
-            .toLlmResponse()
-            .copy(partial = true)
-            .also { response -> logger.trace { "partial response: ${format(response)}" } }
-        )
+      .collect { chunk ->
+        logger.trace { "partial response: ${format(chunk)}" }
+        emit(aggregator.processResponse(chunk.toLlmResponse()))
       }
 
-    emit(
-      responseAggregator
-        .aggregate()
-        .also { response -> logger.trace { "final response: ${format(response)}" } }
-        .toLlmResponse()
-        .copy(partial = false)
-        .also { response -> logger.trace { "final response: ${format(response)}" } }
-    )
+    aggregator.aggregate()?.let { response ->
+      logger.trace { "final response: ${format(response)}" }
+      emit(response)
+    }
   }
 
   override fun generateContent(request: LlmRequest, stream: Boolean): Flow<LlmResponse> {

@@ -163,28 +163,12 @@ internal object GenaiPromptConversions {
   /**
    * Converts a [GenerateContentResponse] to an [LlmResponse].
    *
-   * Only the first candidate is used. If no candidate is returned, an error message is set.
-   *
-   * Error message is also set in case a finish reason is present and it is not STOP.
+   * Only the first candidate is used.
    *
    * @return The [LlmResponse] containing the text from the first candidate and the finish reason if
    *   present.
    */
   internal fun GenerateContentResponse.toLlmResponse(): LlmResponse {
-    return this.toAggregatedResponse().toLlmResponse()
-  }
-
-  /**
-   * Converts a [AggregatedResponse] to an [LlmResponse].
-   *
-   * Only the first candidate is used. If no candidate is returned, an error message is set.
-   *
-   * Error message is also set in case a finish reason is present and it is not STOP.
-   *
-   * @return The [LlmResponse] containing the text from the first candidate and the finish reason if
-   *   present.
-   */
-  internal fun AggregatedResponse.toLlmResponse(): LlmResponse {
     if (candidates.size > 1) {
       logger.warn {
         "Multiple candidates present in GenerateContentResponse. Only the first one will be used in the LlmResponse."
@@ -192,25 +176,47 @@ internal object GenaiPromptConversions {
     }
 
     val candidate = candidates.firstOrNull()
-    val finishReason =
-      candidate?.finishReason?.let {
-        when (it) {
-          Candidate.FinishReason.STOP -> FinishReason.STOP
-          Candidate.FinishReason.MAX_TOKENS -> FinishReason.MAX_TOKENS
-          else -> FinishReason.OTHER
-        }
+    return buildLlmResponse(
+      text = candidate?.text,
+      mlKitFinishReason = candidate?.finishReason,
+      hasThoughtProcess = thoughtProcess.isNotEmpty(),
+    )
+  }
+
+  /**
+   * Builds an [LlmResponse] from an ML Kit candidate's fields.
+   *
+   * Missing [text] is an error, unless [hasThoughtProcess] is true: ML Kit streams thoughts as
+   * candidate-less chunks, and reporting those as errors would propagate into the aggregated final
+   * response.
+   *
+   * Takes plain values rather than a [GenerateContentResponse] so these rules stay unit-testable.
+   */
+  internal fun buildLlmResponse(
+    text: String?,
+    mlKitFinishReason: Int?,
+    hasThoughtProcess: Boolean,
+  ): LlmResponse {
+    val finishReason = mlKitFinishReason?.let {
+      when (it) {
+        Candidate.FinishReason.STOP -> FinishReason.STOP
+        Candidate.FinishReason.MAX_TOKENS -> FinishReason.MAX_TOKENS
+        else -> FinishReason.OTHER
+      }
+    }
+
+    val errorMessage =
+      when {
+        text == null && !hasThoughtProcess -> "No candidates returned."
+        finishReason != null && finishReason != FinishReason.STOP ->
+          "Generation finished with reason: $finishReason"
+        else -> null
       }
 
     return LlmResponse(
-      content = candidate?.let { Content(role = Role.MODEL, parts = listOf(Part(text = it.text))) },
+      content = text?.let { Content(role = Role.MODEL, parts = listOf(Part(text = it))) },
       finishReason = finishReason,
-      errorMessage =
-        when {
-          candidate == null -> "No candidates returned."
-          finishReason != null && finishReason != FinishReason.STOP ->
-            "Generation finished with reason: $finishReason"
-          else -> null
-        },
+      errorMessage = errorMessage,
     )
   }
 }

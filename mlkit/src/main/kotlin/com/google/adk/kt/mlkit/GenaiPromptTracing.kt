@@ -55,14 +55,6 @@ internal object GenaiPromptTracing {
     return "generateContentResponse text: ${redactedText(candidate?.text?.length ?: 0)}, finishReason: ${candidate?.finishReason}"
   }
 
-  internal fun format(aggregatedResponse: AggregatedResponse): String {
-    val candidatesTrace =
-      aggregatedResponse.candidates.joinToString(prefix = "[", postfix = "]") { candidate ->
-        "{ text: ${redactedText(candidate.text.length)}, finishReason: ${candidate.finishReason} }"
-      }
-    return "aggregatedResponse candidates: $candidatesTrace"
-  }
-
   internal fun format(llmResponse: LlmResponse): String = llmResponse.redacted().toString()
 
   internal fun format(llmRequest: LlmRequest): String {
