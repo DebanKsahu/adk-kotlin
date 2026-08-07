@@ -42,6 +42,9 @@ kotlin {
         implementation(libs.a2a.sdk.client)
         implementation(libs.a2a.sdk.common)
         implementation(libs.a2a.sdk.spec)
+        // The A2A SDK's POM does not declare the JSpecify annotations it uses, so Kotlin cannot
+        // read its annotated types (KT-80247; an error from language version 2.4). Compile-only.
+        compileOnly(libs.jspecify)
       }
     }
     // jvmMain hosts the deprecated v0.3 path (JVM-only).
