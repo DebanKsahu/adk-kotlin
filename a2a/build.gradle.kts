@@ -72,6 +72,7 @@ kotlin {
         implementation(libs.google.truth)
         implementation(libs.mockito.kotlin)
         implementation(libs.kotlinx.coroutines.test)
+        implementation(libs.okhttp)
         implementation(libs.okhttp.mockwebserver)
         implementation(libs.a2a.legacy.sdk.client)
         implementation(libs.a2a.legacy.sdk.spec)
