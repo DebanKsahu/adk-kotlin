@@ -105,6 +105,9 @@ val rootAgent = LlmAgent(
 )
 ```
 
+GenAI SDK based `Gemini` currently prevents usage of `API_KEY` and
+`GoogleCredentials` on Android. Use Firebase AI instead.
+
 ### Development UI
 
 Same as the beloved Python Development UI.

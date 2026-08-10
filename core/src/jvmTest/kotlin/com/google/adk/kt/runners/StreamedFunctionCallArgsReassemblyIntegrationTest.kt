@@ -48,6 +48,8 @@ import kotlinx.coroutines.runBlocking
  *
  * Complements [StreamingPartialFunctionCallsIntegrationTest], which covers the post-aggregator
  * parallel-partial-event contract; this one exercises the aggregator itself end-to-end.
+ *
+ * JVM-only: it builds a GenAI SDK `Client`, which the SDK rejects on Android.
  */
 class StreamedFunctionCallArgsReassemblyIntegrationTest {
 

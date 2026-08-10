@@ -41,6 +41,9 @@ import kotlinx.coroutines.flow.flow
  * and streaming responses. It can be configured to use either a Google AI API key or Vertex AI
  * credentials for authentication.
  *
+ * GenAI SDK based [Gemini] currently prevents usage of `API_KEY` and `GoogleCredentials` on
+ * Android. Use Firebase AI instead.
+ *
  * @param client The [Client] instance from the GenAI SDK used for making API calls.
  * @param name The name of the specific Gemini model to use (e.g., "gemini-3.1-flash-lite-preview").
  */

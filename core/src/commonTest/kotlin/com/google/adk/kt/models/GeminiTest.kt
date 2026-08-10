@@ -25,35 +25,14 @@ import com.google.adk.kt.types.GenerateContentConfig
 import com.google.adk.kt.types.Part
 import com.google.adk.kt.types.fromGenaiSdk
 import com.google.common.truth.Truth.assertThat
-import com.google.genai.kotlin.Client
 import com.google.genai.kotlin.types.Candidate as GenAiCandidate
 import com.google.genai.kotlin.types.Content as GenAiContent
 import com.google.genai.kotlin.types.FinishReason as GenAiFinishReason
-import com.google.genai.kotlin.types.GenerateContentConfig as GenAiGenerateContentConfig
 import com.google.genai.kotlin.types.GenerateContentResponse as GenAiGenerateContentResponse
 import com.google.genai.kotlin.types.Part as GenAiPart
 import kotlin.test.Test
-import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.flow.toList
-import kotlinx.coroutines.test.runTest
-import org.mockito.kotlin.any
-import org.mockito.kotlin.eq
-import org.mockito.kotlin.mock
-import org.mockito.kotlin.whenever
 
 class GeminiTest {
-
-  @Test
-  fun init_withApiKey_initializesClient() {
-    val model = Gemini(name = "gemini-test", apiKey = "fake-key")
-    assertThat(model.client.enterprise).isFalse()
-  }
-
-  // The `init_withVertexCredentials_initializesClient` test lives in `jvmTest/GeminiJvmTest.kt`
-  // because it constructs a `com.google.auth.oauth2.GoogleCredentials` via its JVM builder, which
-  // isn't reachable from `commonTest`. `VertexCredentials.credentials` itself is typed against the
-  // SDK's `expect class GoogleCredentials` and is therefore commonTest-visible, but there is no
-  // KMP-friendly way to materialize a non-null instance for the assertion.
 
   @Test
   fun ensureModelResponse_lastRoleNotUser_addsContinueOutputMessage() {
@@ -191,78 +170,6 @@ class GeminiTest {
   }
 
   @Test
-  fun generateContent_streaming_emitsPartialAndFinalResponses() = runTest {
-    val client = Client(apiKey = "fake")
-    val mockModels = mock<Gemini.GeminiModels>()
-    whenever(
-        mockModels.generateContentStream(
-          eq("gemini-3.1-flash-preview"),
-          any<List<GenAiContent>>(),
-          any<GenAiGenerateContentConfig>(),
-        )
-      )
-      .thenReturn(
-        flowOf(
-          buildGenAiResponse("chunk 1 "),
-          buildGenAiResponse("chunk 2", finishReason = GenAiFinishReason.STOP),
-        )
-      )
-    val model = Gemini(client, "gemini-3.1-flash-preview", models = mockModels)
-
-    val responses =
-      model
-        .generateContent(
-          LlmRequest(contents = listOf(userMessage("Hello")), config = GenerateContentConfig()),
-          stream = true,
-        )
-        .toList()
-
-    // We expect 3 total responses: 2 partial chunks + 1 final aggregated
-    assertThat(responses).hasSize(3)
-    assertResponse(responses[0], expectedText = "chunk 1 ", isPartial = true)
-    assertResponse(responses[1], expectedText = "chunk 2", isPartial = true)
-    assertResponse(
-      responses[2],
-      expectedText = "chunk 1 chunk 2",
-      isPartial = false,
-      expectedFinishReason = "STOP",
-    )
-    assertThat(responses[2].errorMessage).isNull()
-  }
-
-  @Test
-  fun generateContent_nonStreaming_returnsResponse() = runTest {
-    val client = Client(apiKey = "fake")
-    val mockModels = mock<Gemini.GeminiModels>()
-    whenever(
-        mockModels.generateContent(
-          eq("gemini-3.1-flash-preview"),
-          any<List<GenAiContent>>(),
-          any<GenAiGenerateContentConfig>(),
-        )
-      )
-      .thenReturn(buildGenAiResponse("full response", finishReason = GenAiFinishReason.STOP))
-    val model = Gemini(client, "gemini-3.1-flash-preview", models = mockModels)
-
-    val responses =
-      model
-        .generateContent(
-          LlmRequest(contents = listOf(userMessage("Hello")), config = GenerateContentConfig()),
-          stream = false,
-        )
-        .toList()
-
-    assertThat(responses).hasSize(1)
-    assertResponse(
-      responses[0],
-      expectedText = "full response",
-      isPartial = false,
-      expectedFinishReason = "STOP",
-    )
-    assertThat(responses[0].errorMessage).isNull()
-  }
-
-  @Test
   fun from_finishReasonStop_nullsOutErrorMessage() {
     val genAiResponse =
       GenAiGenerateContentResponse(
@@ -294,34 +201,5 @@ class GeminiTest {
     val llmResponse = LlmResponse.from(genAiResponse.fromGenaiSdk())
     assertThat(llmResponse.finishReason?.name).isEqualTo("MAX_TOKENS")
     assertThat(llmResponse.errorMessage).isEqualTo("Too long")
-  }
-
-  private fun buildGenAiResponse(
-    text: String,
-    finishReason: GenAiFinishReason? = null,
-  ): GenAiGenerateContentResponse {
-    return GenAiGenerateContentResponse(
-      candidates =
-        listOf(
-          GenAiCandidate(
-            content = GenAiContent(role = "model", parts = listOf(GenAiPart(text = text))),
-            finishReason = finishReason,
-          )
-        )
-    )
-  }
-
-  private fun assertResponse(
-    response: LlmResponse,
-    expectedText: String,
-    isPartial: Boolean,
-    expectedFinishReason: String? = null,
-  ) {
-    assertThat(response.partial).isEqualTo(isPartial)
-    val actualText = response.content?.parts?.joinToString("") { it.text ?: "" }
-    assertThat(actualText).isEqualTo(expectedText)
-    if (expectedFinishReason != null) {
-      assertThat(response.finishReason?.name).isEqualTo(expectedFinishReason)
-    }
   }
 }
