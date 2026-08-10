@@ -118,6 +118,10 @@ subprojects {
   tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompilationTask<*>>().configureEach {
     compilerOptions {
       optIn.add("kotlin.time.ExperimentalTime")
+      // `explicitNulls` in adkJson and `@EncodeDefault` on FunctionCall / FunctionResponse are
+      // experimental, and the timing tests read `currentTime`.
+      optIn.add("kotlinx.serialization.ExperimentalSerializationApi")
+      optIn.add("kotlinx.coroutines.ExperimentalCoroutinesApi")
       freeCompilerArgs.add("-Xskip-metadata-version-check")
       // `expect`/`actual` classes are Beta (KT-61573); GoogleCredentials relies on them.
       freeCompilerArgs.add("-Xexpect-actual-classes")
