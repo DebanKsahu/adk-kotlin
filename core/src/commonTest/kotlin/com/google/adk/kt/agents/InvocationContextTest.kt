@@ -16,7 +16,9 @@
 
 package com.google.adk.kt.agents
 
+import com.google.adk.kt.callbacks.AfterToolCallback
 import com.google.adk.kt.callbacks.CallbackChoice
+import com.google.adk.kt.callbacks.OnToolErrorCallback
 import com.google.adk.kt.events.Event
 import com.google.adk.kt.events.EventActions
 import com.google.adk.kt.plugins.Plugin
@@ -839,6 +841,63 @@ class InvocationContextTest {
   }
 
   @Test
+  fun executeSingleFunctionCall_toolReturnsMapWithNullValue_preservesNull() = runTest {
+    // A `null` value in the tool's response map (e.g. {"result": null}) must survive the
+    // tool-response path, not be dropped.
+    val tool =
+      DummyTool(name = "test_tool", isLongRunning = false) { _, _ ->
+        mapOf("result" to null, "status" to "ok")
+      }
+
+    val context =
+      testInvocationContext(
+        agent = LlmAgent(name = "test_llm_agent", model = DummyModel("mock_model")),
+        invocationId = "inv",
+      )
+
+    val result =
+      context.executeSingleFunctionCall(
+        FunctionCall(name = "test_tool", args = emptyMap(), id = "call_id"),
+        mapOf("test_tool" to tool),
+      )
+
+    assertNotNull(result)
+    val functionResponse = result!!.content?.parts?.get(0)?.functionResponse
+    assertNotNull(functionResponse)
+    assertEquals(mapOf("result" to null, "status" to "ok"), functionResponse!!.response)
+  }
+
+  @Test
+  fun executeSingleFunctionCall_afterToolCallbackReturnsNullValue_preservesNull() = runTest {
+    // The after-tool callback contract carries `Map<String, Any?>`, so a callback may set a `null`
+    // value and it reaches the emitted `FunctionResponse`.
+    val tool = DummyTool(name = "test_tool", isLongRunning = false) { _, _ -> mapOf("a" to 1) }
+    val callback = AfterToolCallback { _, _, _, _ -> mapOf("result" to null) }
+
+    val context =
+      testInvocationContext(
+        agent =
+          LlmAgent(
+            name = "test_llm_agent",
+            model = DummyModel("mock_model"),
+            afterToolCallbacks = listOf(callback),
+          ),
+        invocationId = "inv",
+      )
+
+    val result =
+      context.executeSingleFunctionCall(
+        FunctionCall(name = "test_tool", args = emptyMap(), id = "call_id"),
+        mapOf("test_tool" to tool),
+      )
+
+    assertNotNull(result)
+    val functionResponse = result!!.content?.parts?.get(0)?.functionResponse
+    assertNotNull(functionResponse)
+    assertEquals(mapOf("result" to null), functionResponse!!.response)
+  }
+
+  @Test
   fun executeSingleFunctionCall_toolThrowsException_propagatesToCaller() = runTest {
     // Per the new contract (matching Python ADK), exceptions thrown by the tool function are not
     // caught by KSP-generated code. The framework's outer try/catch in
@@ -866,5 +925,36 @@ class InvocationContextTest {
     assertNotNull(thrown)
     assertTrue(thrown is IllegalStateException)
     assertEquals("database unreachable", thrown!!.message)
+  }
+
+  @Test
+  fun executeSingleFunctionCall_onToolErrorRecoveryWithNullValue_preservesNull() = runTest {
+    // An error-recovery result becomes the tool response, so it may carry `null` values too.
+    val tool = DummyTool(name = "test_tool") { _, _ -> throw IllegalStateException("boom") }
+    val recover = OnToolErrorCallback { _, _, _, _ ->
+      CallbackChoice.Break(mapOf("result" to null))
+    }
+
+    val context =
+      testInvocationContext(
+        agent =
+          LlmAgent(
+            name = "test_llm_agent",
+            model = DummyModel("mock_model"),
+            onToolErrorCallbacks = listOf(recover),
+          ),
+        invocationId = "inv",
+      )
+
+    val result =
+      context.executeSingleFunctionCall(
+        FunctionCall(name = "test_tool", args = emptyMap(), id = "call_id"),
+        mapOf("test_tool" to tool),
+      )
+
+    assertNotNull(result)
+    val functionResponse = result!!.content?.parts?.get(0)?.functionResponse
+    assertNotNull(functionResponse)
+    assertEquals(mapOf("result" to null), functionResponse!!.response)
   }
 }

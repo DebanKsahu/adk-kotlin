@@ -201,15 +201,15 @@ interface Plugin : AutoCloseable {
    * @param context The context specific to the tool execution.
    * @param tool The tool instance that has just been executed.
    * @param args The original arguments that were passed to the tool.
-   * @param result The dictionary / map returned by the tool invocation.
+   * @param result The dictionary / map returned by the tool invocation. Values may be `null`.
    * @return The potentially modified result map to propagate downstream.
    */
   suspend fun afterTool(
     context: ToolContext,
     tool: BaseTool,
     args: Map<String, Any>,
-    result: Map<String, Any>,
-  ): Map<String, Any> = result
+    result: Map<String, Any?>,
+  ): Map<String, Any?> = result
 
   /**
    * Callback executed when an error occurs during a tool invocation.
@@ -222,15 +222,15 @@ interface Plugin : AutoCloseable {
    * @param args The arguments that were passed to the tool.
    * @param error The exception that was raised.
    * @return A [CallbackChoice] where returning [CallbackChoice.Break] with a custom map intercepts
-   *   the error and resolves execution using that fallback value. Returning
-   *   [CallbackChoice.Continue] with [Unit] permits the error to be propagated naturally.
+   *   the error and resolves execution using that fallback value; its values may be `null`.
+   *   Returning [CallbackChoice.Continue] with [Unit] permits the error to be propagated naturally.
    */
   suspend fun onToolError(
     context: ToolContext,
     tool: BaseTool,
     args: Map<String, Any>,
     error: Throwable,
-  ): CallbackChoice<Unit, Map<String, Any>> = CallbackChoice.Continue(Unit)
+  ): CallbackChoice<Unit, Map<String, Any?>> = CallbackChoice.Continue(Unit)
 
   /**
    * Method executed when the runner is closed.

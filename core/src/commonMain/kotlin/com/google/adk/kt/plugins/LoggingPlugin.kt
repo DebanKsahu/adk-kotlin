@@ -198,8 +198,8 @@ class LoggingPlugin(override val name: String = "logging_plugin") : Plugin {
     context: ToolContext,
     tool: BaseTool,
     args: Map<String, Any>,
-    result: Map<String, Any>,
-  ): Map<String, Any> {
+    result: Map<String, Any?>,
+  ): Map<String, Any?> {
     log("🔧 TOOL COMPLETED")
     log("   BaseTool Name: ${tool.name}")
     log("   Agent: ${context.invocationContext.agent.name}")
@@ -213,7 +213,7 @@ class LoggingPlugin(override val name: String = "logging_plugin") : Plugin {
     tool: BaseTool,
     args: Map<String, Any>,
     error: Throwable,
-  ): CallbackChoice<Unit, Map<String, Any>> {
+  ): CallbackChoice<Unit, Map<String, Any?>> {
     log("🔧 TOOL ERROR")
     log("   BaseTool Name: ${tool.name}")
     log("   Agent: ${context.invocationContext.agent.name}")
@@ -253,7 +253,7 @@ class LoggingPlugin(override val name: String = "logging_plugin") : Plugin {
       .joinToString(" | ")
   }
 
-  fun formatArgs(args: Map<String, Any>?): String {
+  fun formatArgs(args: Map<String, Any?>?): String {
     if (args.isNullOrEmpty()) {
       return "{}"
     }

@@ -21,6 +21,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.time.Duration.Companion.seconds
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
 
 class GenaiConvertersTest {
@@ -41,6 +42,17 @@ class GenaiConvertersTest {
 
     val convertedBack = genaiFunctionResponse.fromGenaiSdk()
     assertEquals(adkFunctionResponse, convertedBack)
+  }
+
+  @Test
+  fun functionResponse_toGenaiSdk_preservesTopLevelNullValue() {
+    // A top-level `null` response value reaches the GenAI SDK as JsonNull, not dropped.
+    val adkFunctionResponse =
+      FunctionResponse(name = "myFunction", response = mapOf("result" to null), id = "call-123")
+
+    val genaiFunctionResponse = adkFunctionResponse.toGenaiSdk()
+
+    assertEquals(mapOf("result" to JsonNull), genaiFunctionResponse.response)
   }
 
   @Test

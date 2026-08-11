@@ -308,8 +308,8 @@ class DebugLoggingPlugin(
     context: ToolContext,
     tool: BaseTool,
     args: Map<String, Any>,
-    result: Map<String, Any>,
-  ): Map<String, Any> {
+    result: Map<String, Any?>,
+  ): Map<String, Any?> {
     addEntry(
       context.invocationContext.invocationId,
       "tool_response",
@@ -329,7 +329,7 @@ class DebugLoggingPlugin(
     tool: BaseTool,
     args: Map<String, Any>,
     error: Throwable,
-  ): CallbackChoice<Unit, Map<String, Any>> {
+  ): CallbackChoice<Unit, Map<String, Any?>> {
     addEntry(
       context.invocationContext.invocationId,
       "tool_error",

@@ -531,7 +531,7 @@ data class InvocationContext(
                 functionResponse =
                   FunctionResponse(
                     name = tool.name,
-                    response = toResponseMapPreservingNulls(toolResult),
+                    response = toFinalResponseMap(toolResult),
                     id = toolContext.functionCallId,
                   )
               )
@@ -619,20 +619,20 @@ data class InvocationContext(
   }
 
   /**
-   * Coerces an arbitrary tool payload into the `Map<String, Any>` shape required by both
+   * Coerces an arbitrary tool payload into the `Map<String, Any?>` shape required by both
    * [FunctionResponse.response] and the after-tool callback pipeline:
-   * - A payload that is already a [Map] is fed through [safeCastToMapStringAny] (which drops
-   *   non-string keys and null values).
+   * - A payload that is already a [Map] keeps its string-keyed entries, including `null` values
+   *   (e.g. `{"result": null}`); only non-string keys are dropped.
    * - Any other value is wrapped in a single-entry `{ RESULT_KEY -> value }` map (the spec requires
    *   the response to be a dict).
    *
    * Centralizing this rule means [buildResponseEvent] and [runAfterToolCallbacks] don't need to
    * each implement the wrap-and-cast step.
    */
-  private fun toFinalResponseMap(payload: Any?): Map<String, Any> =
-    safeCastToMapStringAny(
-      if (payload !is Map<*, *>) mapOf(BaseTool.RESULT_KEY to payload) else payload
-    )
+  private fun toFinalResponseMap(payload: Any?): Map<String, Any?> {
+    val map = if (payload is Map<*, *>) payload else mapOf(BaseTool.RESULT_KEY to payload)
+    return buildMap { for ((key, value) in map) if (key is String) put(key, value) }
+  }
 
   /**
    * Converts a tool-call args or tool-response payload (JSON-native maps/lists/primitives) into a
@@ -641,24 +641,6 @@ data class InvocationContext(
    */
   @OptIn(FrameworkInternalApi::class)
   private fun toTraceJson(payload: Any?): JsonElement = anyToJsonElement(payload)
-
-  /**
-   * Like [toFinalResponseMap] but preserves null values in the response dict (e.g. `{result:
-   * null}`); only entries with non-String keys are dropped. The genai `FunctionResponse` allows
-   * null values, so the function-response *event* keeps them. (The after-tool callback path still
-   * receives the null-dropped [toFinalResponseMap] to preserve its non-null `Map<String, Any>`
-   * contract.)
-   *
-   * TODO(b/536808100): unify with [toFinalResponseMap] so the callback path preserves nulls too.
-   */
-  private fun toResponseMapPreservingNulls(payload: Any?): Map<String, Any?> =
-    if (payload !is Map<*, *>) {
-      mapOf(BaseTool.RESULT_KEY to payload)
-    } else {
-      payload.entries
-        .mapNotNull { entry -> (entry.key as? String)?.let { key -> key to entry.value } }
-        .toMap()
-    }
 
   private fun safeCastToMapStringAny(value: Any?): Map<String, Any> {
     if (value !is Map<*, *>) return emptyMap()

@@ -29,15 +29,15 @@ interface AfterToolCallback : Callback {
    * @param context The context specific to the tool execution.
    * @param tool The tool instance that has just been executed.
    * @param args The original arguments that were passed to the tool.
-   * @param result The dictionary / map returned by the tool invocation.
+   * @param result The dictionary / map returned by the tool invocation. Values may be `null`.
    * @return The potentially updated or replaced dictionary / map to propagate downstream.
    */
   suspend fun call(
     context: ToolContext,
     tool: BaseTool,
     args: Map<String, Any>,
-    result: Map<String, Any>,
-  ): Map<String, Any>
+    result: Map<String, Any?>,
+  ): Map<String, Any?>
 
   companion object {
     // Workaround for problems when automatic SAM conversion code generated with gradle kotlin
@@ -49,15 +49,15 @@ interface AfterToolCallback : Callback {
     operator fun invoke(
       block:
         suspend (
-          context: ToolContext, tool: BaseTool, args: Map<String, Any>, result: Map<String, Any>,
-        ) -> Map<String, Any>
+          context: ToolContext, tool: BaseTool, args: Map<String, Any>, result: Map<String, Any?>,
+        ) -> Map<String, Any?>
     ): AfterToolCallback =
       object : AfterToolCallback {
         override suspend fun call(
           context: ToolContext,
           tool: BaseTool,
           args: Map<String, Any>,
-          result: Map<String, Any>,
+          result: Map<String, Any?>,
         ) = block(context, tool, args, result)
       }
   }

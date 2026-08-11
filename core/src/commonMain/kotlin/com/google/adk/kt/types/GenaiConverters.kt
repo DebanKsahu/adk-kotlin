@@ -88,8 +88,9 @@ import kotlinx.serialization.json.longOrNull
 /**
  * Recursively converts an arbitrary value into a [JsonElement] for the GenAI SDK.
  *
- * Null map entries are stripped so they are omitted from the serialized JSON of
- * `FunctionResponse.response`.
+ * A `null` becomes [JsonNull]. Within a nested [Map] value, null-valued entries are dropped; the
+ * top-level `FunctionResponse.response` / `FunctionCall.args` maps are converted entry-by-entry by
+ * their callers, so their `null` values are preserved as [JsonNull].
  */
 internal fun Any?.toJsonElement(): JsonElement =
   when (this) {

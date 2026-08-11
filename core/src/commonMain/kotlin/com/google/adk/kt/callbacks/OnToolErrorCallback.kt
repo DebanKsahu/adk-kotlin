@@ -32,15 +32,15 @@ interface OnToolErrorCallback : Callback {
    * @param args The arguments that were passed to the tool.
    * @param error The exception that was raised.
    * @return A [CallbackChoice] where returning [CallbackChoice.Break] with a custom map intercepts
-   *   the error and resolves execution using that fallback value. Returning
-   *   [CallbackChoice.Continue] with [Unit] permits the error to be propagated naturally.
+   *   the error and resolves execution using that fallback value; its values may be `null`.
+   *   Returning [CallbackChoice.Continue] with [Unit] permits the error to be propagated naturally.
    */
   suspend fun call(
     context: ToolContext,
     tool: BaseTool,
     args: Map<String, Any>,
     error: Throwable,
-  ): CallbackChoice<Unit, Map<String, Any>>
+  ): CallbackChoice<Unit, Map<String, Any?>>
 
   companion object {
     // Workaround for problems when automatic SAM conversion code generated with gradle kotlin
@@ -53,7 +53,7 @@ interface OnToolErrorCallback : Callback {
       block:
         suspend (
           context: ToolContext, tool: BaseTool, args: Map<String, Any>, error: Throwable,
-        ) -> CallbackChoice<Unit, Map<String, Any>>
+        ) -> CallbackChoice<Unit, Map<String, Any?>>
     ): OnToolErrorCallback =
       object : OnToolErrorCallback {
         override suspend fun call(
