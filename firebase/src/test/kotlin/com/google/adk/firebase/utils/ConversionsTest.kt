@@ -31,6 +31,8 @@ import com.google.adk.kt.types.Role
 import com.google.adk.kt.types.Schema
 import com.google.adk.kt.types.ThinkingConfig
 import com.google.adk.kt.types.ThinkingLevel
+import com.google.adk.kt.types.ToolCall
+import com.google.adk.kt.types.ToolType
 import com.google.adk.kt.types.Type
 import com.google.common.truth.Truth.assertThat
 import com.google.firebase.ai.type.BlockReason
@@ -375,6 +377,92 @@ class ConversionsTest {
     assertThat(llmResponse.finishReason).isEqualTo(FinishReason.SAFETY)
     assertThat(llmResponse.errorCode).isEqualTo(FinishReason.SAFETY.name)
     assertThat(llmResponse.errorMessage).isEqualTo("blocked")
+  }
+
+  // History keeps parts carrying only a thought signature. Firebase carries one as an empty text
+  // part, so the model still gets its own state back.
+  @Test
+  fun toFirebaseContent_keepsThoughtSignatureAsEmptyTextPart() {
+    val conversions = Conversions()
+    val adkContent =
+      Content(
+        role = Role.MODEL,
+        parts = listOf(Part(text = "Hello"), Part(thoughtSignature = byteArrayOf(1, 2, 3))),
+      )
+
+    val firebaseContent = conversions.toFirebaseContent(adkContent)
+
+    assertThat(firebaseContent.parts).hasSize(2)
+    assertThat((firebaseContent.parts[0] as TextPart).text).isEqualTo("Hello")
+    assertThat((firebaseContent.parts[1] as TextPart).text).isEmpty()
+    // The empty text is only the vehicle; the signature is the payload that has to survive.
+    assertThat((firebaseContent.parts[1] as TextPart).thoughtSignature).isEqualTo("AQID")
+  }
+
+  // Only the tool fields are unexpressible: a signature riding on a server-side tool part is state
+  // the model has to get back, so the part is stripped rather than discarded.
+  @Test
+  fun toFirebaseContent_keepsSignatureRidingOnAServerSideToolPart() {
+    val conversions = Conversions()
+    val adkContent =
+      Content(
+        role = Role.MODEL,
+        parts =
+          listOf(
+            Part(
+              toolCall = ToolCall(id = "tc1", toolType = ToolType.URL_CONTEXT),
+              thoughtSignature = byteArrayOf(1, 2, 3),
+            )
+          ),
+      )
+
+    val firebaseContent = conversions.toFirebaseContent(adkContent)
+
+    assertThat(firebaseContent.parts).hasSize(1)
+    assertThat((firebaseContent.parts[0] as TextPart).thoughtSignature).isEqualTo("AQID")
+  }
+
+  // A content whose parts are all unexpressible must not reach Firebase as an empty content.
+  @Test
+  fun requestContents_dropsContentLeftEmptyByStripping() {
+    val conversions = Conversions()
+    val request =
+      LlmRequest(
+        contents =
+          listOf(
+            Content(role = Role.USER, parts = listOf(Part(text = "Hi"))),
+            Content(
+              role = Role.MODEL,
+              parts = listOf(Part(toolCall = ToolCall(id = "tc1", toolType = ToolType.URL_CONTEXT))),
+            ),
+          )
+      )
+
+    val contents = conversions.RequestConverter(request).contents()
+
+    assertThat(contents).hasSize(1)
+    assertThat((contents[0].parts[0] as TextPart).text).isEqualTo("Hi")
+  }
+
+  // A server-side tool call belongs to the model instance that made it and Firebase cannot express
+  // it, so it is dropped rather than failing the whole request.
+  @Test
+  fun toFirebaseContent_dropsServerSideToolParts() {
+    val conversions = Conversions()
+    val adkContent =
+      Content(
+        role = Role.MODEL,
+        parts =
+          listOf(
+            Part(text = "Hello"),
+            Part(toolCall = ToolCall(id = "tc1", toolType = ToolType.URL_CONTEXT)),
+          ),
+      )
+
+    val firebaseContent = conversions.toFirebaseContent(adkContent)
+
+    assertThat(firebaseContent.parts).hasSize(1)
+    assertThat((firebaseContent.parts[0] as TextPart).text).isEqualTo("Hello")
   }
 
   @Test

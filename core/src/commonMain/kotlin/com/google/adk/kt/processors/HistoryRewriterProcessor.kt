@@ -285,14 +285,20 @@ internal class HistoryRewriterProcessor {
    * Returns whether [event] qualifies as the start of the current turn for [agentName] on
    * [currentBranch]: it must be visible in this agent's context, and it must be a user input or
    * another agent's reply (not this agent's own output, and not an internal/auth/etc. event).
+   *
+   * An other-agent reply also has to survive [presentOtherAgentMessage]. Signature and server-side
+   * tool parts are visible but have nothing to narrate, so a turn started on one would truncate the
+   * history at an event that then contributes nothing, leaving the request with no contents at all.
    */
   private fun isCurrentTurnBoundary(
     event: Event,
     agentName: String,
     currentBranch: String?,
-  ): Boolean =
-    shouldIncludeEventInContext(currentBranch, event) &&
-      (event.author == Role.USER || isOtherAgentReply(agentName, event))
+  ): Boolean {
+    if (!shouldIncludeEventInContext(currentBranch, event)) return false
+    if (event.author == Role.USER) return true
+    return isOtherAgentReply(agentName, event) && presentOtherAgentMessage(event) != null
+  }
 
   private fun isOtherAgentReply(currentAgentName: String, event: Event): Boolean {
     return currentAgentName.isNotEmpty() &&
@@ -323,7 +329,11 @@ internal class HistoryRewriterProcessor {
         // Exclude thoughts from the context.
         continue
       }
-      part.text?.let { text -> newParts.add(Part(text = "[${event.author}] said: $text")) }
+      // Blank text is not narrated: such a part is a signature carrier, and a bare "said:" would
+      // both pollute the prompt and keep the event alive on nothing. Matches the emptiness rule.
+      part.text
+        ?.takeIf { it.isNotBlank() }
+        ?.let { text -> newParts.add(Part(text = "[${event.author}] said: $text")) }
       part.functionCall?.let { functionCall ->
         newParts.add(
           Part(
@@ -380,8 +390,9 @@ internal class HistoryRewriterProcessor {
    *
    * This can happen to the events that only changed session state. When both content and
    * transcriptions are empty, the event will be considered as empty. The content is considered
-   * empty if none of its parts contain text, inline data, function call, or function response.
-   * Parts with only thoughts are also considered empty.
+   * empty if none of its parts contain text, inline data, function call, function response,
+   * server-side tool call, or server-side tool response. Parts with only thoughts are also
+   * considered empty.
    */
   private fun containsEmptyContent(event: Event): Boolean {
     // Compaction events carry their summary in actions.compaction rather than content; keep them so
@@ -400,15 +411,29 @@ internal class HistoryRewriterProcessor {
    * Returns whether a part is invisible for LLM context.
    *
    * A part is invisible if:
-   * - It has no meaningful content (text, inline_data, function_call, or function_response), OR
-   * - It is marked as a thought AND does not contain function_call or function_response.
+   * - It has no meaningful content (text, inline_data, function_call, function_response, tool_call
+   *   or tool_response) and no thought_signature, OR
+   * - It is marked as a thought AND contains none of those.
    *
    * Function calls and responses are never invisible, even if marked as thought, because they
-   * represent actions that need to be executed or results that need to be processed.
+   * represent actions that need to be executed or results that need to be processed. Parts carrying
+   * a thought signature, and server-side tool calls and responses, are never invisible either,
+   * because the caller is required to echo them back on the next request.
    */
   private fun isPartInvisible(part: Part): Boolean {
     // Function calls and responses are never invisible, even if marked as thought
     if (part.functionCall != null || part.functionResponse != null) {
+      return false
+    }
+
+    // A thought signature is opaque state to hand back verbatim, and it routinely arrives on a part
+    // with nothing else in it, so it has to be checked before the emptiness test below.
+    if (part.thoughtSignature?.isNotEmpty() == true) {
+      return false
+    }
+
+    // Server-side tool calls/responses must be echoed back to the model.
+    if (part.toolCall != null || part.toolResponse != null) {
       return false
     }
 
@@ -486,8 +511,10 @@ internal class HistoryRewriterProcessor {
       }
       isMatchingEvent
     }
+      // Identified by shape only: the events themselves hold model text and tool payloads.
       ?: throw IllegalStateException(
-        "No function call event found for function responses ids: $currentFunctionResponseIds in event list: $events"
+        "No function call event found for function response ids: $currentFunctionResponseIds " +
+          "among ${events.size} events searched from index $searchFromIndex"
       )
   }
 

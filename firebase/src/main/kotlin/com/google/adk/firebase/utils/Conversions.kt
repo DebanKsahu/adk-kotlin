@@ -244,8 +244,23 @@ internal class Conversions {
 
   fun toFirebaseContent(content: Content): FirebaseContent =
     with(content) {
-      FirebaseContent(role = inspectRole(role), parts = parts.map { toFirebasePart(it) })
+      // History now keeps parts a server-side tool minted, which Firebase cannot express. Drop a
+      // part only when nothing else on it is expressible, so a thought signature riding on a tool
+      // call still reaches the model instead of leaving with the part that carried it.
+      FirebaseContent(
+        role = inspectRole(role),
+        parts = parts.filter { it.isExpressibleInFirebase() }.map { toFirebasePart(it) },
+      )
     }
+
+  /** True when [toFirebasePart] has a branch for this part; mirrors its `when`. */
+  private fun Part.isExpressibleInFirebase(): Boolean =
+    text != null ||
+      inlineData != null ||
+      fileData != null ||
+      functionCall != null ||
+      functionResponse != null ||
+      thoughtSignature != null
 
   fun toAdkContent(content: FirebaseContent): Content =
     with(content) { Content(role = role, parts = parts.map { toAdkPart(it) }) }
@@ -258,7 +273,7 @@ internal class Conversions {
         is FileDataPart -> Part(fileData = toAdkFileData(part))
         is FunctionCallPart -> Part(functionCall = toAdkFunctionCall(part))
         is FunctionResponsePart -> Part(functionResponse = toAdkFunctionResponse(part))
-        else -> throw IllegalArgumentException("Unsupported part type: $part")
+        else -> throw IllegalArgumentException("Unsupported part type: ${part::class.simpleName}")
       }
     return base.copy(
       thought = if (part.isThought) true else null,
@@ -279,7 +294,10 @@ internal class Conversions {
       fileData != null -> applyThinking(toFirebaseFileData(fileData), part)
       functionCall != null -> applyThinking(toFirebaseFunctionCall(functionCall), part)
       functionResponse != null -> applyThinking(toFirebaseFunctionResponse(functionResponse), part)
-      else -> throw IllegalArgumentException("Unsupported part type: $part")
+      // A thought signature arrives on a part holding nothing else; Firebase carries it as an
+      // empty text part so the model still gets its own state back.
+      part.thoughtSignature != null -> applyThinking(toFirebaseText(""), part)
+      else -> throw IllegalArgumentException("Unsupported part type")
     }
   }
 
@@ -719,7 +737,8 @@ internal class Conversions {
 
     fun <T> convert(block: RequestConverter.() -> T): T = block(this)
 
-    fun contents(): List<FirebaseContent> = with(request) { contents.map { toFirebaseContent(it) } }
+    fun contents(): List<FirebaseContent> =
+      with(request) { contents.map { toFirebaseContent(it) }.filter { it.parts.isNotEmpty() } }
 
     fun generationConfig(): GenerationConfig = generationConfigBuilder().build()
 

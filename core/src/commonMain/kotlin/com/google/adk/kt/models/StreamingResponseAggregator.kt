@@ -53,6 +53,10 @@ class StreamingResponseAggregator {
   private val currentTextBuffer = StringBuilder()
   private var currentTextIsThought: Boolean? = null
 
+  // Kept apart from the function call's slot below so an interleaved chunk cannot flush one part
+  // carrying the other's signature.
+  private var currentTextThoughtSignature: ByteArray? = null
+
   private var currentFcName: String? = null
   private val currentFcArgs = mutableMapOf<String, Any?>()
   private var currentFcId: String? = null
@@ -84,8 +88,11 @@ class StreamingResponseAggregator {
     val parts = (response.content?.parts ?: emptyList()).map { it.ensureFunctionCallId() }
     for (part in parts) {
       when {
-        part.text != null -> processTextPart(part)
+        !part.text.isNullOrEmpty() -> processTextPart(part)
         part.functionCall != null -> processFunctionCallPart(part)
+        // An empty text part that carries something else falls through to survive on its own; one
+        // carrying nothing at all just ends a Gemini 3 stream and is dropped.
+        part.isStreamTerminator() -> {}
         else -> {
           // Other non-text parts (blobs, etc.)
           flushTextBufferToSequence()
@@ -113,14 +120,6 @@ class StreamingResponseAggregator {
 
     flushTextBufferToSequence()
     flushFunctionCallToSequence()
-
-    if (partsSequence.isNotEmpty()) {
-      // Attach a trailing thought signature from the final chunk to the last aggregated part.
-      last.content?.parts?.firstOrNull()?.thoughtSignature?.let { signature ->
-        partsSequence[partsSequence.lastIndex] =
-          partsSequence[partsSequence.lastIndex].copy(thoughtSignature = signature)
-      }
-    }
 
     val finalErrorCode = finishReason?.takeIf { it != FinishReason.STOP }?.name
     val finalErrorMessage = errorMessage?.takeIf { finishReason != FinishReason.STOP }
@@ -150,22 +149,27 @@ class StreamingResponseAggregator {
         Part(
           text = currentTextBuffer.toString(),
           thought = currentTextIsThought,
-          thoughtSignature = currentThoughtSignature,
+          thoughtSignature = currentTextThoughtSignature,
         )
       )
       currentTextBuffer.clear()
       currentTextIsThought = null
-      currentThoughtSignature = null
+      currentTextThoughtSignature = null
     }
   }
 
   private fun processTextPart(part: Part) {
-    // Flush on text-type change, then capture any signature so it rides on the flushed text.
+    // Flush before capturing this chunk's signature below, or the signature of the run starting
+    // here lands on the run being flushed.
     if (currentTextBuffer.isNotEmpty() && part.thought != currentTextIsThought) {
       flushTextBufferToSequence()
     }
 
-    part.thoughtSignature?.let { currentThoughtSignature = it }
+    // Keep the first signature of the run, as ADK Python does; the merged part takes it in
+    // flushTextBufferToSequence.
+    if (currentTextThoughtSignature == null && part.thoughtSignature?.isNotEmpty() == true) {
+      currentTextThoughtSignature = part.thoughtSignature
+    }
     currentTextIsThought = part.thought
     currentTextBuffer.append(part.text)
   }
@@ -193,7 +197,7 @@ class StreamingResponseAggregator {
         fc.willContinue == true ||
         (currentFcName != null && !hasName)
     if (streamedPart) {
-      if (part.thoughtSignature != null && currentThoughtSignature == null) {
+      if (part.thoughtSignature?.isNotEmpty() == true && currentThoughtSignature == null) {
         currentThoughtSignature = part.thoughtSignature
       }
       processStreamingFunctionCall(fc)
@@ -279,4 +283,12 @@ class StreamingResponseAggregator {
     }
     current[pathKeys.last()] = value
   }
+
+  /**
+   * Returns whether this is the empty-text terminator Gemini 3 ends a stream with: empty text and
+   * nothing else worth keeping. Rebuilt rather than compared to a single constant, so a terminator
+   * that also carries an explicit `thought = false` is still recognised.
+   */
+  private fun Part.isStreamTerminator(): Boolean =
+    text?.isEmpty() == true && this == Part(text = "", thought = thought)
 }
