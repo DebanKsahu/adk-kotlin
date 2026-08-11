@@ -115,6 +115,22 @@ subprojects {
     }
   }
 
+  // Conscrypt, which Robolectric pulls in, calls System::load, which JDK 24 restricts (JEP 472).
+  // Keyed off the JVM that runs the tests, not the jdkVersion property, because the Android
+  // modules apply no Kotlin toolchain. The flag is not needed below 24.
+  tasks.withType<Test>().configureEach {
+    val launcher = javaLauncher
+    jvmArgumentProviders.add(
+      CommandLineArgumentProvider {
+        if (launcher.get().metadata.languageVersion.asInt() >= 24) {
+          listOf("--enable-native-access=ALL-UNNAMED")
+        } else {
+          emptyList()
+        }
+      }
+    )
+  }
+
   tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompilationTask<*>>().configureEach {
     compilerOptions {
       optIn.add("kotlin.time.ExperimentalTime")
