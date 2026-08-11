@@ -13,15 +13,25 @@ Each menu entry opens one self-contained example `Activity`:
     toolset.
 -   **ML Kit chat** — a multi-turn chat with an on-device Gemini Nano agent,
     with a streaming toggle.
+-   **LiteRT-LM chat** — a multi-turn chat with an on-device agent run by
+    LiteRT-LM from the [`:google-adk-kotlin-litertlm`](../../litertlm) module,
+    with a streaming toggle and tool calling (via
+    [`DeviceTools.kt`](src/main/kotlin/com/google/adk/kt/examples/android/litertlmchat/DeviceTools.kt)).
+    Downloads its model on first use — see
+    [The LiteRT-LM model](#the-litert-lm-model-for-the-litert-lm-chat-example)
+    below.
 -   **Firebase AI** — a chat backed by the cloud Firebase AI (Gemini) model from
     the [`:google-adk-kotlin-firebase`](../../firebase) module, demonstrating
     both plain chat and tool calling (via
     [`WeatherTools.kt`](src/main/kotlin/com/google/adk/kt/examples/android/firebase/WeatherTools.kt)).
 
-**Room session** and **ML Kit chat** run fully on-device through ML Kit's Gemini
-Nano, so they need no API key or network (the first run may download Gemini
-Nano). The **Skills (AssetSkillSource)** and **Firebase AI** examples call the
-cloud Firebase backend, so they need a Firebase configuration and network access
+**Room session**, **ML Kit chat** and **LiteRT-LM chat** infer fully on-device
+and need no API key: the first two through ML Kit's Gemini Nano, the third
+through a model file in the app's own storage. Each uses the network only to
+obtain that model the first time: Gemini Nano may be downloaded on the first
+run, and the LiteRT-LM example fetches its weights. The **Skills
+(AssetSkillSource)** and **Firebase AI** examples call the cloud Firebase
+backend on every turn, so they need a Firebase configuration and network access
 — see [Configure Firebase](#configure-firebase-for-the-firebase-backed-examples)
 below.
 
@@ -35,11 +45,62 @@ With a device or emulator connected:
 
 Then launch **"ADK Android Examples"** from the launcher and pick an example.
 
+## The LiteRT-LM model (for the LiteRT-LM chat example)
+
+LiteRT-LM is handed a path to a `.litertlm` file and runs whatever model is in
+it; it does not fetch models itself, so getting one onto the device is the app's
+job. The other examples don't need any of this.
+
+**Nothing to do to try it:** open the example and press **Download**. It streams
+`gemma-4-E2B-it.litertlm` (about 2.5 GB) from the
+[LiteRT community on Hugging Face](https://huggingface.co/litert-community) into
+the app's own files directory, then loads it. Use Wi-Fi, and note the model
+wants a device with 8 GB of RAM or more. After that it runs offline; loading the
+weights takes a few seconds at each launch, and generation is slower than the
+cloud examples — that's the model running on the device's CPU.
+
+**To use a different model,** edit the `REPO` / `FILE_NAME` / `REVISION`
+constants in
+[`LiteRtLmModelStore.kt`](src/main/kotlin/com/google/adk/kt/examples/android/litertlmchat/LiteRtLmModelStore.kt).
+Two things to watch: function calling only works with a model trained for tool
+use, and repositories that require accepting a license need an access token this
+sample does not implement. For those, and as a faster loop while developing,
+push a file yourself — a `.litertlm` you supply takes precedence over the
+downloaded one, so there is nothing to delete first:
+
+```shell
+adb push your-model.litertlm \
+    /sdcard/Android/data/com.google.adk.kt.examples.android/files/
+```
+
+### How a real app would ship the model
+
+Downloading on first use, as this sample does, is what the
+[Google AI Edge Gallery](https://github.com/google-ai-edge/gallery) does too,
+and it is a reasonable choice — but it leaves you owning the hosting, the
+storage, the retries and the updates. Bundling the file in the APK is not an
+option at these sizes.
+
+For an app shipped on Google Play, the delivery path to reach for is
+[Play for On-device AI](https://developer.android.com/google/play/on-device-ai)
+(currently in beta): the model becomes an **AI pack** that Play hosts, delivers
+and updates alongside the app — at install time, fast-follow, or on demand —
+through the
+[`com.google.android.play:ai-delivery`](https://maven.google.com/web/index.html#com.google.android.play:ai-delivery)
+library. Play then owns the download, the storage and the updates, and can send
+a different variant of the model to different device tiers. The runtime side is
+unchanged: you still hand `EngineConfig` a file path.
+
+Watch the size limits, which is exactly why this sample does not use it: an
+individual AI pack is capped at **1.5 GB compressed**, and 4 GB is the maximum
+cumulative size of any version of your app. The 2.5 GB model above does not fit,
+so taking the AI pack route means choosing a smaller model.
+
 ## Configure Firebase (for the Firebase-backed examples)
 
 The **Skills (AssetSkillSource)** and **Firebase AI** examples need to know
 which Firebase project to talk to; the on-device examples (Room session, ML Kit
-chat) don't need any of this. Two ways, in order of preference:
+chat, LiteRT-LM chat) don't need any of this. Two ways, in order of preference:
 
 ### 1. `google-services.json` (standard Firebase setup — recommended)
 

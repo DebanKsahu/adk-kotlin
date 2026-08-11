@@ -49,6 +49,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.google.adk.kt.examples.android.common.ui.AdkExamplesTheme
 import com.google.adk.kt.examples.android.firebase.FirebaseChatActivity
+import com.google.adk.kt.examples.android.litertlmchat.LiteRtLmChatActivity
 import com.google.adk.kt.examples.android.mlkitchat.MlKitChatActivity
 import com.google.adk.kt.examples.android.roomsession.RoomSessionActivity
 import com.google.adk.kt.examples.android.skillsassetsource.SkillsAssetSourceActivity
@@ -90,6 +91,11 @@ class HomeActivity : ComponentActivity() {
           "ML Kit chat",
           "On-device Gemini Nano, multi-turn, with a streaming toggle",
           MlKitChatActivity::class.java,
+        ),
+        ExampleEntry(
+          "LiteRT-LM chat",
+          "On-device LiteRT-LM model with tool calling; downloads the model on first run",
+          LiteRtLmChatActivity::class.java,
         ),
         ExampleEntry(
           "Firebase AI",

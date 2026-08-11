@@ -17,8 +17,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="com.google.android.apps.aicore.service.BIND_SERVICE" />
-    <!-- Required by the Firebase-backed examples (Skills, Firebase AI): they talk to the cloud
-         Firebase AI (Gemini) backend. -->
+    <!-- Required by the Firebase-backed examples (Skills, Firebase AI), which talk to the cloud
+         Firebase AI (Gemini) backend, and by the LiteRT-LM example, which downloads its model. -->
     <uses-permission android:name="android.permission.INTERNET" />
 
     <application
@@ -59,6 +59,11 @@
             android:windowSoftInputMode="adjustResize" />
         <activity
             android:name=".mlkitchat.MlKitChatActivity"
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+        <activity
+            android:name=".litertlmchat.LiteRtLmChatActivity"
             android:configChanges="orientation|screenSize|keyboardHidden"
             android:exported="false"
             android:windowSoftInputMode="adjustResize" />

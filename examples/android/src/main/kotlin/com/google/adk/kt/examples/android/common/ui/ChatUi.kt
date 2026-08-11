@@ -71,8 +71,9 @@ data class ChatMessage(val author: ChatAuthor, val text: String, val label: Stri
 
 /**
  * Shared Material 3 chat screen used by every example: an app bar with a back button, a scrolling
- * list of message bubbles, and an input bar. When [onStreamingChange] is supplied a "Stream" toggle
- * is shown above the input (used by the ML Kit example).
+ * list of message bubbles, and an input bar. When [onStreamingChange] is supplied, a "Stream"
+ * toggle is shown above the input. The optional [footer] allows adding custom content between the
+ * transcript and the input bar.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -85,6 +86,7 @@ fun ChatScreen(
   hint: String = "Type a message…",
   streaming: Boolean = false,
   onStreamingChange: ((Boolean) -> Unit)? = null,
+  footer: @Composable (() -> Unit)? = null,
 ) {
   Scaffold(
     topBar = {
@@ -100,6 +102,7 @@ fun ChatScreen(
   ) { padding ->
     Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()) {
       MessageList(messages, Modifier.weight(1f))
+      footer?.invoke()
       if (onStreamingChange != null) {
         StreamToggle(streaming, onStreamingChange)
       }

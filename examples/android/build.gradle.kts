@@ -17,8 +17,7 @@
 plugins {
   // Kotlin is compiled by AGP's built-in Kotlin support (no kotlin-android plugin).
   id("com.android.application")
-  // Generates the `@Tool` FunctionTools used by the Firebase example
-  // (WeatherTools.generatedTools()).
+  // Generates the `@Tool` FunctionTools for the Firebase and LiteRT-LM examples.
   alias(libs.plugins.ksp)
   // Jetpack Compose compiler. Pinned (via the version catalog) to the Kotlin version AGP's built-in
   // Kotlin support uses, which the compiler plugin must match exactly.
@@ -117,9 +116,13 @@ run {
 dependencies {
   implementation(project(":google-adk-kotlin-core"))
   implementation(project(":google-adk-kotlin-firebase"))
+  implementation(project(":google-adk-kotlin-litertlm"))
   implementation(project(":google-adk-kotlin-mlkit"))
   implementation(platform(libs.google.firebase.platform))
   implementation(libs.google.firebase.ai)
+  // The LiteRT-LM example builds its own EngineConfig, and the module's own dependency on the
+  // runtime is `implementation`, so it is not exposed transitively.
+  implementation(libs.google.ai.edge.litertlm.android)
   implementation(libs.google.mlkit.genai.prompt)
   implementation(libs.kotlinx.coroutines.core)
   implementation(libs.androidx.core)
@@ -135,7 +138,6 @@ dependencies {
   implementation(libs.androidx.compose.ui.tooling.preview)
   debugImplementation(libs.androidx.compose.ui.tooling)
 
-  // Generates the `@Tool` FunctionTools used by the Firebase example
-  // (WeatherTools.generatedTools()).
+  // Generates the `@Tool` FunctionTools for the Firebase and LiteRT-LM examples.
   ksp(project(":google-adk-kotlin-processor"))
 }
