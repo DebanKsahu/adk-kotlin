@@ -22,6 +22,7 @@ import com.google.adk.kt.agents.LlmAgent
 import com.google.adk.kt.agents.ReadonlyContext
 import com.google.adk.kt.agents.ResumabilityConfig
 import com.google.adk.kt.agents.RunConfig
+import com.google.adk.kt.agents.StreamingMode
 import com.google.adk.kt.agents.TypedData
 import com.google.adk.kt.apps.App
 import com.google.adk.kt.events.Event
@@ -45,6 +46,7 @@ import com.google.adk.kt.tools.BaseTool
 import com.google.adk.kt.tools.ToolContext
 import com.google.adk.kt.tools.Toolset
 import com.google.adk.kt.types.Content
+import com.google.adk.kt.types.FinishReason
 import com.google.adk.kt.types.FunctionCall
 import com.google.adk.kt.types.FunctionDeclaration
 import com.google.adk.kt.types.FunctionResponse
@@ -55,6 +57,7 @@ import com.google.common.truth.Truth.assertThat
 import kotlin.test.assertFailsWith
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
@@ -745,6 +748,41 @@ class InMemoryRunnerTest {
 
     assertThat(allSessionEvents.size).isEqualTo(2)
     assertThat(allSessionEvents.last().content?.parts?.get(0)?.text).isEqualTo("New message")
+  }
+
+  // A content-free STOP turn concludes in one model call and persists one final event.
+  @Test
+  fun runAsync_contentFreeStopTurn_concludesInOneCallAndPersistsOneEvent() = runBlocking {
+    var modelCalls = 0
+    val model =
+      DummyModel("content-free-model") {
+        modelCalls++
+        flowOf(LlmResponse(content = null, finishReason = FinishReason.STOP))
+      }
+    val runner = InMemoryRunner(agent = LlmAgent(name = "content-free-agent", model = model))
+
+    val unused =
+      runner
+        .runAsync(
+          userId = "user1",
+          sessionId = "session1",
+          newMessage = userMessage("hi"),
+          runConfig = RunConfig(streamingMode = StreamingMode.SSE, maxLlmCalls = 5),
+        )
+        .toList()
+
+    assertThat(modelCalls).isEqualTo(1)
+
+    val agentEvents =
+      runner.sessionService
+        .getSession(SessionKey(runner.appName, "user1", "session1"))!!
+        .events
+        .filter { it.author == "content-free-agent" }
+    assertThat(agentEvents).hasSize(1)
+    val finalEvent = agentEvents.single()
+    assertThat(finalEvent.partial).isFalse()
+    assertThat(finalEvent.finishReason).isEqualTo(FinishReason.STOP)
+    assertThat(finalEvent.content).isNull()
   }
 }
 

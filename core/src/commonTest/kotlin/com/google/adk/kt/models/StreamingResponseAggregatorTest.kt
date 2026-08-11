@@ -553,13 +553,34 @@ class StreamingResponseAggregatorTest {
     assertEquals("Generation failed.", finalResp.errorMessage)
   }
 
-  // Nothing to report: no content and no error means no final response.
+  // A content-free chunk with a STOP finish aggregates to a non-partial, empty final frame.
   @Test
-  fun contentFreeStreamWithoutError_producesNoFinalResponse() = runBlocking {
+  fun contentFreeStreamWithStop_stillProducesEmptyFinalFrame() = runBlocking {
     val aggregator = StreamingResponseAggregator()
 
     val unused =
-      aggregator.processResponse(LlmResponse(usageMetadata = UsageMetadata(totalTokenCount = 3)))
+      aggregator.processResponse(
+        LlmResponse(
+          finishReason = FinishReason.STOP,
+          usageMetadata = UsageMetadata(totalTokenCount = 3),
+        )
+      )
+    val finalResp = aggregator.aggregate()
+
+    assertNotNull(finalResp)
+    assertEquals(false, finalResp.partial)
+    assertEquals(null, finalResp.content)
+    assertEquals(FinishReason.STOP, finalResp.finishReason)
+    assertEquals(null, finalResp.errorCode)
+    assertEquals(null, finalResp.errorMessage)
+    assertEquals(3, finalResp.usageMetadata?.totalTokenCount)
+  }
+
+  // With no responses processed at all there is nothing to conclude, so aggregate() returns null
+  // (mirroring the Python aggregator's close()).
+  @Test
+  fun noResponsesProcessed_producesNoFinalResponse() = runBlocking {
+    val aggregator = StreamingResponseAggregator()
 
     assertEquals(null, aggregator.aggregate())
   }
@@ -578,6 +599,28 @@ class StreamingResponseAggregatorTest {
     assertEquals(false, finalResp.partial)
     assertEquals(FinishReason.OTHER, finalResp.finishReason)
     assertEquals("OTHER", finalResp.errorCode)
+    assertEquals(null, finalResp.errorMessage)
+  }
+
+  // A lone empty text part with a STOP finish aggregates to a non-partial, empty final frame.
+  @Test
+  fun emptyTextPartWithStop_producesEmptyFinalFrame() = runBlocking {
+    val aggregator = StreamingResponseAggregator()
+
+    val unused =
+      aggregator.processResponse(
+        LlmResponse(
+          content = Content(parts = listOf(Part(text = ""))),
+          finishReason = FinishReason.STOP,
+        )
+      )
+    val finalResp = aggregator.aggregate()
+
+    assertNotNull(finalResp)
+    assertEquals(false, finalResp.partial)
+    assertEquals(null, finalResp.content)
+    assertEquals(FinishReason.STOP, finalResp.finishReason)
+    assertEquals(null, finalResp.errorCode)
     assertEquals(null, finalResp.errorMessage)
   }
 
