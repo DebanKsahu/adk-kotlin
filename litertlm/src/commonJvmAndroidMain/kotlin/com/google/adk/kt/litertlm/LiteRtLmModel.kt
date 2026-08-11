@@ -109,6 +109,7 @@ private constructor(
             }
 
           var isCompleted = false
+          var isAbandoned = false
           val accumulatedText = StringBuilder()
           var lastResponse: LlmResponse? = null
 
@@ -143,33 +144,44 @@ private constructor(
                     partial = false,
                   )
 
-                finalResponse.content?.let { modelResponseContent ->
-                  synchronized(activeConversation) {
-                    activeConversation.update(conversation, request.contents + modelResponseContent)
+                synchronized(activeConversation) {
+                  // Skipped once abandoned, so a late callback cannot re-register a released one.
+                  if (!isAbandoned) {
+                    finalResponse.content?.let { modelResponseContent ->
+                      activeConversation.update(
+                        conversation,
+                        request.contents + modelResponseContent,
+                      )
+                    }
                   }
+                  isCompleted = true
                 }
 
                 val unused = trySend(finalResponse)
-                isCompleted = true
                 channel.close()
               }
 
               override fun onError(throwable: Throwable) {
                 // Discard conversation on generation failures.
-                synchronized(activeConversation) { activeConversation.clear() }
+                discardActiveConversation()
                 val unused =
                   trySend(LlmResponse(errorMessage = throwable.message ?: throwable.toString()))
-                isCompleted = true
+                synchronized(activeConversation) { isCompleted = true }
                 channel.close(throwable)
               }
             },
           )
           awaitClose {
-            // If the flow is cancelled before completion, the conversation state is incomplete.
-            // In that case, discard and close the conversation.
-            if (!isCompleted) {
-              synchronized(activeConversation) { activeConversation.clear() }
-            }
+            // Cancelled before completion, so the conversation state is incomplete: discard it.
+            val abandoned =
+              synchronized(activeConversation) {
+                if (isCompleted) null
+                else {
+                  isAbandoned = true
+                  activeConversation.detach()
+                }
+              }
+            abandoned?.let { releaseConversation(it) }
           }
         }
       }
@@ -199,7 +211,7 @@ private constructor(
             emit(response)
           } catch (e: Exception) {
             // Discard conversation on generation failures.
-            synchronized(activeConversation) { activeConversation.clear() }
+            discardActiveConversation()
             emit(LlmResponse(errorMessage = e.message ?: e.toString()))
           }
         }
@@ -222,13 +234,14 @@ private constructor(
 
     val liteRtLmLastMessage = mapContentToLiteRtLmMessage(lastMessage)
 
+    // Released before building the replacement, and outside the lock, since closing blocks.
+    discardActiveConversation(keepMatching = history)
+
     val conversation =
       synchronized(activeConversation) {
         if (activeConversation.matches(history)) {
           activeConversation.conversation!!
         } else {
-          activeConversation.clear()
-
           val liteRtLmTools =
             request.config.tools
               ?.flatMap { tool ->
@@ -265,9 +278,39 @@ private constructor(
 
   override fun close() {
     // Safely close the active conversation when the model itself is closed.
-    synchronized(activeConversation) { activeConversation.clear() }
+    discardActiveConversation()
     if (ownsEngine) {
       engine.close()
+    }
+  }
+
+  /**
+   * Releases the cached conversation, unless its history is [keepMatching]. Detached under the lock
+   * but released outside it, since releasing needs the lock the terminal callback holds.
+   */
+  private fun discardActiveConversation(keepMatching: List<AdkContent>? = null) {
+    val detached =
+      synchronized(activeConversation) {
+        if (keepMatching != null && activeConversation.matches(keepMatching)) null
+        else activeConversation.detach()
+      }
+    detached?.let { releaseConversation(it) }
+  }
+
+  /**
+   * Cancels generation and then closes [conversation]. Both are best-effort: a conversation that
+   * has already finished or closed throws instead of reporting it.
+   */
+  private fun releaseConversation(conversation: LiteRtLmConversation) {
+    try {
+      conversation.cancelProcess()
+    } catch (e: Exception) {
+      logger.warn(e) { "Cancelling generation failed; closing the conversation anyway." }
+    }
+    try {
+      conversation.close()
+    } catch (e: Exception) {
+      logger.warn(e) { "Closing the conversation failed." }
     }
   }
 }

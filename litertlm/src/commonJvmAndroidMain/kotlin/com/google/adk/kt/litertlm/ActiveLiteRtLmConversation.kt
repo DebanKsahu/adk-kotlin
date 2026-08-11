@@ -36,10 +36,14 @@ internal class ActiveLiteRtLmConversation {
     return conversation != null && this.history == history
   }
 
-  /** Closes the active conversation and clears the conversation history. */
-  fun clear() {
-    conversation?.close()
+  /**
+   * Forgets the active conversation and returns it for the caller to close. Closing blocks until
+   * generation ends, so it must not happen under this object's lock.
+   */
+  fun detach(): LiteRtLmConversation? {
+    val detached = conversation
     conversation = null
     history = null
+    return detached
   }
 }

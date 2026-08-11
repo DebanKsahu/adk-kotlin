@@ -29,9 +29,11 @@ import java.util.concurrent.Executors
 import kotlin.test.assertFailsWith
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -40,6 +42,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.kotlin.any
 import org.mockito.kotlin.doAnswer
+import org.mockito.kotlin.inOrder
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
 import org.mockito.kotlin.times
@@ -109,6 +112,38 @@ class LiteRtLmModelTest {
     verify(mockConversation, never()).close()
     model.close()
     verify(mockConversation).close()
+  }
+
+  @Test
+  fun generateContent_streamTrue_cancelledMidGeneration_cancelsThenClosesConversation() = runTest {
+    val mockEngine = mock<LiteRtLmEngine>()
+    val mockConversation = mock<LiteRtLmConversation>()
+    whenever(mockEngine.isInitialized()).thenReturn(true)
+    whenever(mockEngine.createConversation(any())).thenReturn(mockConversation)
+
+    // Emits one chunk and then never finishes, like a long reply abandoned mid-stream.
+    doAnswer { invocation ->
+        val callback = invocation.getArgument<MessageCallback>(1)
+        callback.onMessage(LiteRtLmMessage.model(LiteRtLmContents.of("thinking")))
+        null
+      }
+      .whenever(mockConversation)
+      .sendMessageAsync(any<LiteRtLmMessage>(), any<MessageCallback>())
+
+    val model = LiteRtLmModel.create(mockEngine)
+    val request =
+      LlmRequest(contents = listOf(AdkContent(role = "user", parts = listOf(AdkPart(text = "Hi")))))
+
+    val collecting = launch { model.generateContent(request, stream = true).collect {} }
+    // Let the first chunk arrive, so the turn is genuinely in flight when cancelled.
+    advanceUntilIdle()
+    collecting.cancelAndJoin()
+
+    // Cancel must precede close, and close must happen once.
+    val order = inOrder(mockConversation)
+    order.verify(mockConversation).cancelProcess()
+    order.verify(mockConversation).close()
+    verify(mockConversation, times(1)).close()
   }
 
   @Test

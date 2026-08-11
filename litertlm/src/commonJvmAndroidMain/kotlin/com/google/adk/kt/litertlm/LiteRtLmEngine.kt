@@ -36,6 +36,12 @@ interface LiteRtLmConversation : AutoCloseable {
   fun sendMessage(message: LiteRtLmMessage): LiteRtLmMessage
 
   fun sendMessageAsync(message: LiteRtLmMessage, callback: MessageCallback)
+
+  /**
+   * Stops generation started by [sendMessageAsync], so that closing does not block until it
+   * finishes. The conversation cannot be reused afterwards and must be closed.
+   */
+  fun cancelProcess() {}
 }
 
 /** Default implementation of [LiteRtLmEngine] delegating to the native [Engine]. */
@@ -59,6 +65,8 @@ class DefaultLiteRtLmConversation(private val delegate: Conversation) : LiteRtLm
   override fun sendMessageAsync(message: LiteRtLmMessage, callback: MessageCallback) {
     delegate.sendMessageAsync(message, callback)
   }
+
+  override fun cancelProcess() = delegate.cancelProcess()
 
   override fun close() = delegate.close()
 }
