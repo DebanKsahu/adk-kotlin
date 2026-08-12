@@ -63,7 +63,7 @@ internal class SetModelResponseTool(private val outputSchema: Schema) :
    * by a tool call, so a schema mismatch is treated as a tool execution error rather than a
    * best-effort text result.
    */
-  override suspend fun run(context: ToolContext, args: Map<String, Any>): Map<String, Any> {
+  override suspend fun run(context: ToolContext, args: Map<String, Any?>): Map<String, Any?> {
     SchemaUtils.validateMapOnSchema(args, outputSchema, argsName = "Output").getOrThrow()
     return args
   }

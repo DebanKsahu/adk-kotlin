@@ -63,7 +63,7 @@ class RequestInputTool :
         ),
     )
 
-  override suspend fun run(context: ToolContext, args: Map<String, Any>): Any {
+  override suspend fun run(context: ToolContext, args: Map<String, Any?>): Any {
     // Mirror Python: the mandatory-arg error fires only when the parameter is absent, not when it
     // is present but empty or not a string.
     if (!args.containsKey(MESSAGE_ARG)) {

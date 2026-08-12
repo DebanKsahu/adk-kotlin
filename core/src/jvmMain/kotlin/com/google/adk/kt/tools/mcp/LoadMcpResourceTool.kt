@@ -37,7 +37,7 @@ internal class LoadMcpResourceTool(
   private val mcpToolset: McpToolset,
   private val maxMcpResourceLength: Int,
 ) : BaseTool("load_mcp_resource", DESCRIPTION) {
-  override suspend fun run(context: ToolContext, args: Map<String, Any>): Any {
+  override suspend fun run(context: ToolContext, args: Map<String, Any?>): Any {
     try {
       // Presence first, type second. Collapsing the two would let a malformed value pass as an
       // absent one: {"name": "x", "uri": 123} would quietly read by name, which is the guessing
@@ -121,7 +121,7 @@ internal class LoadMcpResourceTool(
    * Reporting only the count would cost a round trip when the values are also malformed: the model
    * drops one argument, resends, and only then learns the survivor was never a string.
    */
-  private fun wrongArgumentCountMessage(args: Map<String, Any>, given: List<String>): String {
+  private fun wrongArgumentCountMessage(args: Map<String, Any?>, given: List<String>): String {
     val problem =
       if (given.isEmpty()) {
         "neither was given"

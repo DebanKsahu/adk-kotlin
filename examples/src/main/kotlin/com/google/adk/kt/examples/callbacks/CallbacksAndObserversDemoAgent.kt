@@ -63,8 +63,8 @@ class WhiteRabbitCallback : BeforeToolCallback {
   override suspend fun call(
     context: ToolContext,
     tool: BaseTool,
-    args: Map<String, Any>,
-  ): CallbackChoice<Map<String, Any>, Map<String, Any>> {
+    args: Map<String, Any?>,
+  ): CallbackChoice<Map<String, Any?>, Map<String, Any?>> {
     println(
       ">>> 🐰 [CALLBACK]: White Rabbit checks his watch... 'Oh dear! Oh dear! I shall be too late!' (Executing ${tool.name})"
     )

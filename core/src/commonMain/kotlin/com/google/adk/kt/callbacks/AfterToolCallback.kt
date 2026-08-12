@@ -35,7 +35,7 @@ interface AfterToolCallback : Callback {
   suspend fun call(
     context: ToolContext,
     tool: BaseTool,
-    args: Map<String, Any>,
+    args: Map<String, Any?>,
     result: Map<String, Any?>,
   ): Map<String, Any?>
 
@@ -49,14 +49,14 @@ interface AfterToolCallback : Callback {
     operator fun invoke(
       block:
         suspend (
-          context: ToolContext, tool: BaseTool, args: Map<String, Any>, result: Map<String, Any?>,
+          context: ToolContext, tool: BaseTool, args: Map<String, Any?>, result: Map<String, Any?>,
         ) -> Map<String, Any?>
     ): AfterToolCallback =
       object : AfterToolCallback {
         override suspend fun call(
           context: ToolContext,
           tool: BaseTool,
-          args: Map<String, Any>,
+          args: Map<String, Any?>,
           result: Map<String, Any?>,
         ) = block(context, tool, args, result)
       }

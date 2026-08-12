@@ -255,7 +255,7 @@ class FirebaseIntegrationTest {
               ),
           )
 
-        override suspend fun execute(context: ToolContext, args: Map<String, Any>): Any {
+        override suspend fun execute(context: ToolContext, args: Map<String, Any?>): Any {
           invocationCount++
           capturedLocation = args["location"] as? String
           log.info { "Tool invoked with location=$capturedLocation" }
@@ -416,7 +416,7 @@ class FirebaseIntegrationTest {
               ),
           )
 
-        override suspend fun execute(context: ToolContext, args: Map<String, Any>): Any {
+        override suspend fun execute(context: ToolContext, args: Map<String, Any?>): Any {
           invocationCount++
           log.info { "Tool invoked with location=${args["location"]}" }
           return mapOf("temperature_celsius" to magicTemperatureCelsius)
@@ -502,7 +502,7 @@ class FirebaseIntegrationTest {
               ),
           )
 
-        override suspend fun execute(context: ToolContext, args: Map<String, Any>): Any {
+        override suspend fun execute(context: ToolContext, args: Map<String, Any?>): Any {
           capturedMetadata = args["metadata"]
           log.info { "Tool invoked with metadata=$capturedMetadata" }
           return mapOf("recorded" to true)

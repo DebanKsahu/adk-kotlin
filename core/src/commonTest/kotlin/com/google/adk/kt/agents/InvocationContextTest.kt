@@ -17,6 +17,7 @@
 package com.google.adk.kt.agents
 
 import com.google.adk.kt.callbacks.AfterToolCallback
+import com.google.adk.kt.callbacks.BeforeToolCallback
 import com.google.adk.kt.callbacks.CallbackChoice
 import com.google.adk.kt.callbacks.OnToolErrorCallback
 import com.google.adk.kt.events.Event
@@ -271,8 +272,8 @@ class InvocationContextTest {
         override suspend fun beforeTool(
           context: ToolContext,
           tool: BaseTool,
-          args: Map<String, Any>,
-        ): CallbackChoice<Map<String, Any>, Map<String, Any>> {
+          args: Map<String, Any?>,
+        ): CallbackChoice<Map<String, Any?>, Map<String, Any?>> {
           return CallbackChoice.Break(shortCircuitResponse)
         }
       }
@@ -646,7 +647,7 @@ class InvocationContextTest {
 
   @Test
   fun executeSingleFunctionCall_beforeToolModifiesArgs_passesModifiedArgsToTool() = runTest {
-    var capturedArgs: Map<String, Any>? = null
+    var capturedArgs: Map<String, Any?>? = null
     val tool =
       DummyTool(name = "test_tool") { _, args ->
         capturedArgs = args
@@ -660,8 +661,8 @@ class InvocationContextTest {
         override suspend fun beforeTool(
           context: ToolContext,
           tool: BaseTool,
-          args: Map<String, Any>,
-        ): CallbackChoice<Map<String, Any>, Map<String, Any>> {
+          args: Map<String, Any?>,
+        ): CallbackChoice<Map<String, Any?>, Map<String, Any?>> {
           return CallbackChoice.Continue(mapOf("injected" to "value"))
         }
       }
@@ -956,5 +957,170 @@ class InvocationContextTest {
     val functionResponse = result!!.content?.parts?.get(0)?.functionResponse
     assertNotNull(functionResponse)
     assertEquals(mapOf("result" to null), functionResponse!!.response)
+  }
+
+  @Test
+  fun executeSingleFunctionCall_argsContainNullValue_reachTheTool() = runTest {
+    // A `null` argument from the model (e.g. {"nickname": null}) must reach the tool rather than
+    // being filtered out of the map, so the tool can tell it apart from an omitted argument.
+    var observedArgs: Map<String, Any?>? = null
+    val tool =
+      DummyTool(name = "test_tool") { _, args ->
+        observedArgs = args
+        mapOf("status" to "ok")
+      }
+
+    val context =
+      testInvocationContext(
+        agent = LlmAgent(name = "test_llm_agent", model = DummyModel("mock_model")),
+        invocationId = "inv",
+      )
+
+    val unused =
+      context.executeSingleFunctionCall(
+        FunctionCall(
+          name = "test_tool",
+          args = mapOf("id" to "x", "nickname" to null),
+          id = "call_id",
+        ),
+        mapOf("test_tool" to tool),
+      )
+
+    assertEquals(mapOf("id" to "x", "nickname" to null), observedArgs)
+  }
+
+  @Test
+  fun executeSingleFunctionCall_argsContainNullValue_reachBeforeToolCallback() = runTest {
+    // The before-tool callback sees the arguments before the tool does, so the `null` must already
+    // be present at that point.
+    var observedArgs: Map<String, Any?>? = null
+    val tool = DummyTool(name = "test_tool") { _, _ -> mapOf("status" to "ok") }
+    val callback = BeforeToolCallback { _, _, args ->
+      observedArgs = args
+      CallbackChoice.Continue(args)
+    }
+
+    val context =
+      testInvocationContext(
+        agent =
+          LlmAgent(
+            name = "test_llm_agent",
+            model = DummyModel("mock_model"),
+            beforeToolCallbacks = listOf(callback),
+          ),
+        invocationId = "inv",
+      )
+
+    val unused =
+      context.executeSingleFunctionCall(
+        FunctionCall(
+          name = "test_tool",
+          args = mapOf("id" to "x", "nickname" to null),
+          id = "call_id",
+        ),
+        mapOf("test_tool" to tool),
+      )
+
+    assertEquals(mapOf("id" to "x", "nickname" to null), observedArgs)
+  }
+
+  @Test
+  fun executeSingleFunctionCall_beforeToolCallbackInjectsNullArg_reachesTheTool() = runTest {
+    // A callback may also introduce a `null` argument by returning a modified map, and that map is
+    // what the tool receives.
+    var observedArgs: Map<String, Any?>? = null
+    val tool =
+      DummyTool(name = "test_tool") { _, args ->
+        observedArgs = args
+        mapOf("status" to "ok")
+      }
+    val callback = BeforeToolCallback { _, _, _ -> CallbackChoice.Continue(mapOf("added" to null)) }
+
+    val context =
+      testInvocationContext(
+        agent =
+          LlmAgent(
+            name = "test_llm_agent",
+            model = DummyModel("mock_model"),
+            beforeToolCallbacks = listOf(callback),
+          ),
+        invocationId = "inv",
+      )
+
+    val unused =
+      context.executeSingleFunctionCall(
+        FunctionCall(name = "test_tool", args = mapOf("id" to "x"), id = "call_id"),
+        mapOf("test_tool" to tool),
+      )
+
+    assertEquals(mapOf("added" to null), observedArgs)
+  }
+
+  @Test
+  fun executeSingleFunctionCall_argsContainNullValue_reachAfterToolCallback() = runTest {
+    // The after-tool callback receives the same argument map, so the `null` survives to there too.
+    var observedArgs: Map<String, Any?>? = null
+    val tool = DummyTool(name = "test_tool") { _, _ -> mapOf("status" to "ok") }
+    val callback = AfterToolCallback { _, _, args, result ->
+      observedArgs = args
+      result
+    }
+
+    val context =
+      testInvocationContext(
+        agent =
+          LlmAgent(
+            name = "test_llm_agent",
+            model = DummyModel("mock_model"),
+            afterToolCallbacks = listOf(callback),
+          ),
+        invocationId = "inv",
+      )
+
+    val unused =
+      context.executeSingleFunctionCall(
+        FunctionCall(
+          name = "test_tool",
+          args = mapOf("id" to "x", "nickname" to null),
+          id = "call_id",
+        ),
+        mapOf("test_tool" to tool),
+      )
+
+    assertEquals(mapOf("id" to "x", "nickname" to null), observedArgs)
+  }
+
+  @Test
+  fun executeSingleFunctionCall_argsContainNullValue_reachOnToolErrorCallback() = runTest {
+    // The error path also carries the arguments, so a failing tool's callback sees the `null`.
+    var observedArgs: Map<String, Any?>? = null
+    val tool = DummyTool(name = "test_tool") { _, _ -> throw IllegalStateException("boom") }
+    val recover = OnToolErrorCallback { _, _, args, _ ->
+      observedArgs = args
+      CallbackChoice.Break(mapOf("status" to "recovered"))
+    }
+
+    val context =
+      testInvocationContext(
+        agent =
+          LlmAgent(
+            name = "test_llm_agent",
+            model = DummyModel("mock_model"),
+            onToolErrorCallbacks = listOf(recover),
+          ),
+        invocationId = "inv",
+      )
+
+    val unused =
+      context.executeSingleFunctionCall(
+        FunctionCall(
+          name = "test_tool",
+          args = mapOf("id" to "x", "nickname" to null),
+          id = "call_id",
+        ),
+        mapOf("test_tool" to tool),
+      )
+
+    assertEquals(mapOf("id" to "x", "nickname" to null), observedArgs)
   }
 }

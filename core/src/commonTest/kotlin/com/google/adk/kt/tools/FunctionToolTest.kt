@@ -31,7 +31,7 @@ class FunctionToolTest {
   private class TestFunctionTool : FunctionTool("test_func", "A test function tool") {
     override fun declaration() = null
 
-    override suspend fun execute(context: ToolContext, args: Map<String, Any>): Any {
+    override suspend fun execute(context: ToolContext, args: Map<String, Any?>): Any {
       return args
     }
   }
@@ -51,7 +51,7 @@ class FunctionToolTest {
       object : FunctionTool("test_long", "test long", isLongRunning = true) {
         override fun declaration() = null
 
-        override suspend fun execute(context: ToolContext, args: Map<String, Any>): Any {
+        override suspend fun execute(context: ToolContext, args: Map<String, Any?>): Any {
           return args
         }
       }
@@ -68,7 +68,7 @@ class FunctionToolTest {
       object : FunctionTool("test_func", "A test function tool") {
         override fun declaration() = testDeclaration
 
-        override suspend fun execute(context: ToolContext, args: Map<String, Any>): Any {
+        override suspend fun execute(context: ToolContext, args: Map<String, Any?>): Any {
           return args
         }
       }
@@ -108,7 +108,7 @@ class FunctionToolTest {
 
   @Test
   fun run_requiresConfirmation_userConfirmed_invokesExecute() = runTest {
-    var executedArgs: Map<String, Any>? = null
+    var executedArgs: Map<String, Any?>? = null
     val tool =
       confirmGatedTool(
         name = "secure",
@@ -150,7 +150,7 @@ class FunctionToolTest {
       object : FunctionTool("plain", "plain", requiresConfirmation = false) {
         override fun declaration() = null
 
-        override suspend fun execute(context: ToolContext, args: Map<String, Any>): Any {
+        override suspend fun execute(context: ToolContext, args: Map<String, Any?>): Any {
           executed = true
           return args
         }
@@ -183,7 +183,7 @@ class FunctionToolTest {
   fun run_requiresConfirmationLambdaFalse_invokesExecuteWithoutGate() = runTest {
     // Per-call predicate form: a lambda that returns false skips the gate entirely; execute()
     // runs without the framework recording a confirmation request.
-    var executedArgs: Map<String, Any>? = null
+    var executedArgs: Map<String, Any?>? = null
     val tool =
       predicateGatedTool(predicate = { false }, onExecute = { args -> executedArgs = args })
     val toolContext = testToolContext(functionCallId = "fc1")
@@ -228,14 +228,14 @@ class FunctionToolTest {
    * (if applicable) confirmed.
    */
   private fun predicateGatedTool(
-    predicate: (Map<String, Any>) -> Boolean,
-    onExecute: (Map<String, Any>) -> Unit = {},
+    predicate: (Map<String, Any?>) -> Boolean,
+    onExecute: (Map<String, Any?>) -> Unit = {},
     result: Map<String, Any> = mapOf("ok" to true),
   ): FunctionTool =
     object : FunctionTool("predicate-gated", "test", requiresConfirmation = predicate) {
       override fun declaration() = null
 
-      override suspend fun execute(context: ToolContext, args: Map<String, Any>): Any {
+      override suspend fun execute(context: ToolContext, args: Map<String, Any?>): Any {
         onExecute(args)
         return result
       }
@@ -247,13 +247,13 @@ class FunctionToolTest {
    */
   private fun confirmGatedTool(
     name: String,
-    onExecute: (Map<String, Any>) -> Unit = {},
+    onExecute: (Map<String, Any?>) -> Unit = {},
     result: Map<String, Any> = mapOf("ok" to true),
   ): FunctionTool =
     object : FunctionTool(name, "test", requiresConfirmation = true) {
       override fun declaration() = null
 
-      override suspend fun execute(context: ToolContext, args: Map<String, Any>): Any {
+      override suspend fun execute(context: ToolContext, args: Map<String, Any?>): Any {
         onExecute(args)
         return result
       }

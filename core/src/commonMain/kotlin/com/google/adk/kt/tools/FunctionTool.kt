@@ -47,7 +47,7 @@ abstract class FunctionTool(
    * -> Boolean` logic for dynamic gating. The Boolean secondary constructor is a convenience
    * wrapper around the constant cases.
    */
-  protected val requiresConfirmation: (Map<String, Any>) -> Boolean = { false },
+  protected val requiresConfirmation: (Map<String, Any?>) -> Boolean = { false },
 ) : BaseTool(name, description, isLongRunning, customMetadata) {
 
   /**
@@ -82,13 +82,13 @@ abstract class FunctionTool(
    *   "<message>")` to signal an LLM-visible error. From a long-running tool, return `Unit` to
    *   defer the response; see [BaseTool.isLongRunning].
    */
-  abstract suspend fun execute(context: ToolContext, args: Map<String, Any>): Any
+  abstract suspend fun execute(context: ToolContext, args: Map<String, Any?>): Any
 
   /**
    * Executes the tool. This overrides the generic base method to apply the optional confirmation
    * gate before delegating to [execute].
    */
-  final override suspend fun run(context: ToolContext, args: Map<String, Any>): Any {
+  final override suspend fun run(context: ToolContext, args: Map<String, Any?>): Any {
     if (requiresConfirmation(args)) {
       val confirmation = context.toolConfirmation
       if (confirmation == null) {

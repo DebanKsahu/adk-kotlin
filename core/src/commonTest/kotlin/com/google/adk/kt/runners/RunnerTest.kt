@@ -54,7 +54,7 @@ class RunnerTest {
       return FunctionDeclaration(name = "get_weather", description = "Get weather")
     }
 
-    override suspend fun run(context: ToolContext, args: Map<String, Any>): Any {
+    override suspend fun run(context: ToolContext, args: Map<String, Any?>): Any {
       return mapOf("weather" to "sunny", "temperature" to 25)
     }
   }
@@ -64,7 +64,7 @@ class RunnerTest {
       return FunctionDeclaration(name = "get_current_time", description = "Get time")
     }
 
-    override suspend fun run(context: ToolContext, args: Map<String, Any>): Any {
+    override suspend fun run(context: ToolContext, args: Map<String, Any?>): Any {
       return mapOf("time" to "12:00 PM")
     }
   }

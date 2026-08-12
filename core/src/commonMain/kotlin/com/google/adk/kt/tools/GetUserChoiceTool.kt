@@ -56,7 +56,7 @@ class GetUserChoiceTool :
         ),
     )
 
-  override suspend fun run(context: ToolContext, args: Map<String, Any>): Any {
+  override suspend fun run(context: ToolContext, args: Map<String, Any?>): Any {
     // Mirror Python: the mandatory-arg error fires only when the parameter is absent, not when it
     // is present but not a list.
     if (!args.containsKey(OPTIONS_ARG)) {

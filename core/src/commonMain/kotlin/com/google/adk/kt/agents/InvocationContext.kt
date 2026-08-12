@@ -474,7 +474,7 @@ data class InvocationContext(
     tool: BaseTool,
     toolContext: ToolContext,
     eventId: String,
-    args: Map<String, Any>,
+    args: Map<String, Any?>,
   ) {
     this[TelemetryAttributes.GEN_AI_OPERATION_NAME] = TelemetryAttributes.OPERATION_EXECUTE_TOOL
     this[TelemetryAttributes.GEN_AI_TOOL_NAME] = tool.name
@@ -540,9 +540,9 @@ data class InvocationContext(
   private suspend fun runBeforeToolCallbacks(
     llmAgent: LlmAgent?,
     tool: BaseTool,
-    args: Map<String, Any>,
+    args: Map<String, Any?>,
     toolContext: ToolContext,
-  ): CallbackChoice<Map<String, Any>, Map<String, Any>> {
+  ): CallbackChoice<Map<String, Any?>, Map<String, Any?>> {
     if (llmAgent == null) return CallbackChoice.Continue(args)
     val allBeforeCallbacks = pluginManager.beforeToolCallbacks + llmAgent.beforeToolCallbacks
     return runBeforeToolCallbacksPipeline(allBeforeCallbacks, toolContext, tool, args)
@@ -567,7 +567,7 @@ data class InvocationContext(
   private suspend fun runAfterToolCallbacks(
     llmAgent: LlmAgent?,
     tool: BaseTool,
-    args: Map<String, Any>,
+    args: Map<String, Any?>,
     toolContext: ToolContext,
     toolResult: Any?,
   ): Any? {
@@ -586,7 +586,7 @@ data class InvocationContext(
   private suspend fun runErrorBaseToolCallbacks(
     llmAgent: LlmAgent?,
     tool: BaseTool,
-    args: Map<String, Any>,
+    args: Map<String, Any?>,
     toolContext: ToolContext,
     error: Exception,
   ): Any? {
@@ -625,15 +625,18 @@ data class InvocationContext(
   @OptIn(FrameworkInternalApi::class)
   private fun toTraceJson(payload: Any?): JsonElement = anyToJsonElement(payload)
 
-  private fun safeCastToMapStringAny(value: Any?): Map<String, Any> {
+  /**
+   * Coerces an arbitrary payload into the `Map<String, Any?>` shape used by tool arguments and the
+   * tool-callback pipeline. String-keyed entries are preserved verbatim, including `null` values;
+   * only non-string keys are dropped. A non-[Map] payload becomes an empty map.
+   */
+  private fun safeCastToMapStringAny(value: Any?): Map<String, Any?> {
     if (value !is Map<*, *>) return emptyMap()
-    return value.entries
-      .mapNotNull { entry ->
-        val key = entry.key as? String ?: return@mapNotNull null
-        val value = entry.value ?: return@mapNotNull null
-        key to value
+    return buildMap {
+      for ((key, entryValue) in value) {
+        if (key is String) put(key, entryValue)
       }
-      .toMap()
+    }
   }
 }
 

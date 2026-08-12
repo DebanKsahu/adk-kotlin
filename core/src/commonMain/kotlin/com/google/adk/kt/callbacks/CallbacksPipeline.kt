@@ -268,8 +268,8 @@ internal suspend fun runBeforeToolCallbacksPipeline(
   callbacks: Iterable<BeforeToolCallback>,
   context: ToolContext,
   tool: BaseTool,
-  args: Map<String, Any>,
-): CallbackChoice<Map<String, Any>, Map<String, Any>> =
+  args: Map<String, Any?>,
+): CallbackChoice<Map<String, Any?>, Map<String, Any?>> =
   runCallbacksPipeline(
     callbacks = callbacks,
     initialState = args,
@@ -286,7 +286,7 @@ internal suspend fun runAfterToolCallbacksPipeline(
   callbacks: Iterable<AfterToolCallback>,
   context: ToolContext,
   tool: BaseTool,
-  args: Map<String, Any>,
+  args: Map<String, Any?>,
   result: Map<String, Any?>,
 ): Map<String, Any?> =
   runCallbacksPipeline(callbacks = callbacks, initialState = result, onComplete = { it }) {
@@ -300,7 +300,7 @@ internal suspend fun runOnToolErrorCallbacksPipeline(
   callbacks: Iterable<OnToolErrorCallback>,
   context: ToolContext,
   tool: BaseTool,
-  args: Map<String, Any>,
+  args: Map<String, Any?>,
   error: Throwable,
 ): CallbackChoice<Unit, Map<String, Any?>> =
   runCallbacksPipeline(

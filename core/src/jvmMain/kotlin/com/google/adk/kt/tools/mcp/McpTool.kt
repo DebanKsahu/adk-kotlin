@@ -74,7 +74,7 @@ internal constructor(
 
   override fun declaration(): FunctionDeclaration? = convertedDeclaration
 
-  override suspend fun run(context: ToolContext, args: Map<String, Any>): Any {
+  override suspend fun run(context: ToolContext, args: Map<String, Any?>): Any {
     val request = McpSchema.CallToolRequest(name, args, requestMeta(context))
     val callResult = retrySessionCall { callTool(request).awaitSingleOrNull() }
 

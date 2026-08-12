@@ -34,7 +34,7 @@ import kotlinx.coroutines.CancellationException
 internal class ListMcpResourcesTool(private val mcpToolset: McpToolset) :
   BaseTool("list_mcp_resources", DESCRIPTION) {
 
-  override suspend fun run(context: ToolContext, args: Map<String, Any>): Any {
+  override suspend fun run(context: ToolContext, args: Map<String, Any?>): Any {
     try {
       val cursor = args["cursor"] as? String
       val listing = mcpToolset.listResources(cursor, context.invocationContext.toReadonlyContext())

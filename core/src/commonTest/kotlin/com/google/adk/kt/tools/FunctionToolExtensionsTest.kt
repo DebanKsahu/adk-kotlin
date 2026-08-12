@@ -28,7 +28,7 @@ class FunctionToolExtensionsTest {
 
   class DummyFunctionTool(name: String, description: String, private val schema: Schema?) :
     FunctionTool(name, description) {
-    override suspend fun execute(context: ToolContext, args: Map<String, Any>): Any {
+    override suspend fun execute(context: ToolContext, args: Map<String, Any?>): Any {
       return mapOf("result" to "Success")
     }
 

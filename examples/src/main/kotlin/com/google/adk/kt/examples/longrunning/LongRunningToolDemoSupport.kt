@@ -78,7 +78,7 @@ internal class ChangeDestinationTool :
         ),
     )
 
-  override suspend fun run(context: ToolContext, args: Map<String, Any>): Any {
+  override suspend fun run(context: ToolContext, args: Map<String, Any?>): Any {
     val destination = args[DESTINATION_ARG] ?: "<unknown>"
     println("   [backend] dispatching client action to the app: $name(destination=$destination)")
     return mapOf("status" to "dispatched_to_client")

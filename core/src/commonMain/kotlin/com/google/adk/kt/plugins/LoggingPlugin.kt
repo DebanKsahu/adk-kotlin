@@ -184,8 +184,8 @@ class LoggingPlugin(override val name: String = "logging_plugin") : Plugin {
   override suspend fun beforeTool(
     context: ToolContext,
     tool: BaseTool,
-    args: Map<String, Any>,
-  ): CallbackChoice<Map<String, Any>, Map<String, Any>> {
+    args: Map<String, Any?>,
+  ): CallbackChoice<Map<String, Any?>, Map<String, Any?>> {
     log("🔧 TOOL STARTING")
     log("   BaseTool Name: ${tool.name}")
     log("   Agent: ${context.invocationContext.agent.name}")
@@ -197,7 +197,7 @@ class LoggingPlugin(override val name: String = "logging_plugin") : Plugin {
   override suspend fun afterTool(
     context: ToolContext,
     tool: BaseTool,
-    args: Map<String, Any>,
+    args: Map<String, Any?>,
     result: Map<String, Any?>,
   ): Map<String, Any?> {
     log("🔧 TOOL COMPLETED")
@@ -211,7 +211,7 @@ class LoggingPlugin(override val name: String = "logging_plugin") : Plugin {
   override suspend fun onToolError(
     context: ToolContext,
     tool: BaseTool,
-    args: Map<String, Any>,
+    args: Map<String, Any?>,
     error: Throwable,
   ): CallbackChoice<Unit, Map<String, Any?>> {
     log("🔧 TOOL ERROR")

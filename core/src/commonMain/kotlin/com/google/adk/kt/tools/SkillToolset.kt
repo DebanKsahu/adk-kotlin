@@ -67,7 +67,7 @@ internal class ListSkillsTool(private val toolset: SkillToolset) :
     )
   }
 
-  override suspend fun run(context: ToolContext, args: Map<String, Any>): Map<String, Any?> {
+  override suspend fun run(context: ToolContext, args: Map<String, Any?>): Map<String, Any?> {
     return toolset.source
       .listFrontmatters()
       .fold(
@@ -112,7 +112,7 @@ internal class LoadSkillTool(private val toolset: SkillToolset) :
     )
   }
 
-  override suspend fun run(context: ToolContext, args: Map<String, Any>): Map<String, Any?> {
+  override suspend fun run(context: ToolContext, args: Map<String, Any?>): Map<String, Any?> {
     val skillName =
       args[SkillToolset.PARAM_SKILL_NAME] as? String
         ?: return errorResponse("Skill name is required.")
@@ -167,7 +167,7 @@ internal class LoadSkillResourceTool(private val toolset: SkillToolset) :
     )
   }
 
-  override suspend fun run(context: ToolContext, args: Map<String, Any>): Map<String, Any?> {
+  override suspend fun run(context: ToolContext, args: Map<String, Any?>): Map<String, Any?> {
     val skillName =
       args[SkillToolset.PARAM_SKILL_NAME] as? String
         ?: return errorResponse("Skill name is required.")

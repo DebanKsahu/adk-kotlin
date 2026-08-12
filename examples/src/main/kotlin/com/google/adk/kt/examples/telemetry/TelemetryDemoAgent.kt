@@ -66,7 +66,7 @@ object TelemetryDemoAgent {
       )
     }
 
-    override suspend fun run(context: ToolContext, args: Map<String, Any>): Any {
+    override suspend fun run(context: ToolContext, args: Map<String, Any?>): Any {
       return mapOf("result" to "Magic happened!")
     }
   }

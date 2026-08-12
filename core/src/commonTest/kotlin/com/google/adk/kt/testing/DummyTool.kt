@@ -51,13 +51,13 @@ class DummyTool(
   name: String = "dummy_tool",
   description: String = "A dummy tool for testing.",
   isLongRunning: Boolean = false,
-  val onRun: suspend (context: ToolContext, args: Map<String, Any>) -> Any = { _, _ ->
+  val onRun: suspend (context: ToolContext, args: Map<String, Any?>) -> Any = { _, _ ->
     mapOf("status" to "done")
   },
 ) : BaseTool(name, description, isLongRunning) {
   override fun declaration(): FunctionDeclaration? = null
 
-  override suspend fun run(context: ToolContext, args: Map<String, Any>): Any {
+  override suspend fun run(context: ToolContext, args: Map<String, Any?>): Any {
     return onRun(context, args)
   }
 }

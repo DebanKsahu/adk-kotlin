@@ -86,7 +86,7 @@ open class AgentTool(
     )
   }
 
-  override suspend fun run(context: ToolContext, args: Map<String, Any>): String {
+  override suspend fun run(context: ToolContext, args: Map<String, Any?>): String {
     if (skipSummarization) {
       context.actions.skipSummarization = true
     }

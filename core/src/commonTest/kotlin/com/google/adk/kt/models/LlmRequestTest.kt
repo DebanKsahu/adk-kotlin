@@ -42,7 +42,7 @@ class LlmRequestTest {
       return FunctionDeclaration(name = name, description = "desc")
     }
 
-    override suspend fun run(context: ToolContext, args: Map<String, Any>): Any {
+    override suspend fun run(context: ToolContext, args: Map<String, Any?>): Any {
       return "test"
     }
   }
@@ -149,7 +149,7 @@ class LlmRequestTest {
       object : BaseTool("noDecl", "desc") {
         override fun declaration(): FunctionDeclaration? = null
 
-        override suspend fun run(context: ToolContext, args: Map<String, Any>): Any = "noOp"
+        override suspend fun run(context: ToolContext, args: Map<String, Any?>): Any = "noOp"
       }
     request = request.appendTools(listOf(tool))
     assertEquals(null, request.config.tools)

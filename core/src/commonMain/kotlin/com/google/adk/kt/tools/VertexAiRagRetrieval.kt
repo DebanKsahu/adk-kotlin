@@ -53,7 +53,7 @@ class VertexAiRagRetrieval(
 
   override fun declaration(): FunctionDeclaration? = null
 
-  override suspend fun run(context: ToolContext, args: Map<String, Any>): Any {
+  override suspend fun run(context: ToolContext, args: Map<String, Any?>): Any {
     throw UnsupportedOperationException("VertexAiRagRetrieval does not support local execution")
   }
 

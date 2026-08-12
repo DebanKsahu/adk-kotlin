@@ -35,7 +35,7 @@ class ToolProcessorTest {
     override fun declaration() =
       FunctionDeclaration(name = "my_tool_function", description = "does stuff")
 
-    override suspend fun run(context: ToolContext, args: Map<String, Any>): Any = TODO()
+    override suspend fun run(context: ToolContext, args: Map<String, Any?>): Any = TODO()
   }
 
   @Test

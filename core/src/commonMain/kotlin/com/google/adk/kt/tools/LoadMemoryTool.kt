@@ -44,7 +44,7 @@ class LoadMemoryTool :
     )
   }
 
-  override suspend fun run(context: ToolContext, args: Map<String, Any>): Any {
+  override suspend fun run(context: ToolContext, args: Map<String, Any?>): Any {
     val query =
       args["query"] as? String
         ?: return mapOf(

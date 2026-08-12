@@ -22,8 +22,8 @@ import com.google.adk.kt.types.Tool
 import com.google.adk.kt.types.UrlContext
 
 /**
- * A built-in tool that is automatically invoked by Gemini models to retrieve content from
- * the given URLs and use that content to inform and shape its response.
+ * A built-in tool that is automatically invoked by Gemini models to retrieve content from the given
+ * URLs and use that content to inform and shape its response.
  *
  * This tool operates internally within the model and does not require or perform local code
  * execution.
@@ -32,7 +32,7 @@ class UrlContextTool : BaseTool(name = "url_context", description = "url_context
 
   override fun declaration(): FunctionDeclaration? = null
 
-  override suspend fun run(context: ToolContext, args: Map<String, Any>): Any {
+  override suspend fun run(context: ToolContext, args: Map<String, Any?>): Any {
     throw UnsupportedOperationException("UrlContextTool does not support local execution")
   }
 

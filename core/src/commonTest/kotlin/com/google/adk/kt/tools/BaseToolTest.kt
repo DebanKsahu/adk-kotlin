@@ -34,7 +34,7 @@ class BaseToolTest {
   private class DefaultTool : BaseTool("default_tool", "A tool with default arguments") {
     override fun declaration(): FunctionDeclaration? = null
 
-    override suspend fun run(context: ToolContext, args: Map<String, Any>): Any {
+    override suspend fun run(context: ToolContext, args: Map<String, Any?>): Any {
       return "default result"
     }
   }
@@ -50,7 +50,7 @@ class BaseToolTest {
 
     override fun declaration(): FunctionDeclaration? = expectedDeclaration
 
-    override suspend fun run(context: ToolContext, args: Map<String, Any>): Any {
+    override suspend fun run(context: ToolContext, args: Map<String, Any?>): Any {
       return args
     }
   }
@@ -58,7 +58,7 @@ class BaseToolTest {
   private class MinimalTool : BaseTool("minimal_tool", "A minimal tool") {
     override fun declaration(): FunctionDeclaration? = null
 
-    override suspend fun run(context: ToolContext, args: Map<String, Any>): Any {
+    override suspend fun run(context: ToolContext, args: Map<String, Any?>): Any {
       throw NotImplementedError("Tool execution is not implemented for tool: minimal_tool")
     }
   }
@@ -67,7 +67,7 @@ class BaseToolTest {
     override fun declaration(): FunctionDeclaration =
       FunctionDeclaration("tool_with_decl", "A tool")
 
-    override suspend fun run(context: ToolContext, args: Map<String, Any>): Any = Unit
+    override suspend fun run(context: ToolContext, args: Map<String, Any?>): Any = Unit
   }
 
   @Test

@@ -623,7 +623,7 @@ class FunctionToolHitlIntegrationTest {
     FunctionTool(SECURE_TOOL_NAME, "Securely transfers money.", requiresConfirmation = true) {
     override fun declaration() = null
 
-    override suspend fun execute(context: ToolContext, args: Map<String, Any>): Any {
+    override suspend fun execute(context: ToolContext, args: Map<String, Any?>): Any {
       onExecute()
       return mapOf("status" to "ok")
     }
@@ -641,7 +641,7 @@ class FunctionToolHitlIntegrationTest {
     FunctionTool(CUSTOM_TOOL_NAME, "Requests confirmation with a custom payload schema.") {
     override fun declaration() = null
 
-    override suspend fun execute(context: ToolContext, args: Map<String, Any>): Any {
+    override suspend fun execute(context: ToolContext, args: Map<String, Any?>): Any {
       val confirmation = context.toolConfirmation
       if (confirmation == null) {
         context.requestConfirmation(

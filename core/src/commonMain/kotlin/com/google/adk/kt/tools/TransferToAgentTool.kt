@@ -67,7 +67,7 @@ internal class TransferToAgentTool(val agentNames: List<String>) :
     )
   }
 
-  override suspend fun run(context: ToolContext, args: Map<String, Any>): Any {
+  override suspend fun run(context: ToolContext, args: Map<String, Any?>): Any {
     (args["agent_name"] as? String)?.let { context.actions.transferToAgent = it }
     return emptyMap<String, Any>()
   }

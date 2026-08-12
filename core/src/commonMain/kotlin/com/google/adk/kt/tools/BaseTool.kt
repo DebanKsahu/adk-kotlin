@@ -53,7 +53,7 @@ abstract class BaseTool(
    * or expose the function via [com.google.adk.kt.annotations.Tool], which converts data classes
    * (and enums, lists, and nested structures) into Maps automatically.
    */
-  abstract suspend fun run(context: ToolContext, args: Map<String, Any>): Any
+  abstract suspend fun run(context: ToolContext, args: Map<String, Any?>): Any
 
   /**
    * Processes the LLM request before it is sent.

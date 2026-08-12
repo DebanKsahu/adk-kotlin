@@ -48,7 +48,7 @@ class LoadArtifactsTool :
     )
   }
 
-  override suspend fun run(context: ToolContext, args: Map<String, Any>): Any {
+  override suspend fun run(context: ToolContext, args: Map<String, Any?>): Any {
     val artifactNames = args.getArtifactNamesList()
     return mapOf(
       "artifact_names" to artifactNames,

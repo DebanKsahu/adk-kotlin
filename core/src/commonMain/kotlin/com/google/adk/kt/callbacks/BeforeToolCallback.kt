@@ -35,8 +35,8 @@ interface BeforeToolCallback : Callback {
   suspend fun call(
     context: ToolContext,
     tool: BaseTool,
-    args: Map<String, Any>,
-  ): CallbackChoice<Map<String, Any>, Map<String, Any>>
+    args: Map<String, Any?>,
+  ): CallbackChoice<Map<String, Any?>, Map<String, Any?>>
 
   companion object {
     // Workaround for problems when automatic SAM conversion code generated with gradle kotlin
@@ -47,13 +47,13 @@ interface BeforeToolCallback : Callback {
 
     operator fun invoke(
       block:
-        suspend (context: ToolContext, tool: BaseTool, args: Map<String, Any>) -> CallbackChoice<
-            Map<String, Any>,
-            Map<String, Any>,
+        suspend (context: ToolContext, tool: BaseTool, args: Map<String, Any?>) -> CallbackChoice<
+            Map<String, Any?>,
+            Map<String, Any?>,
           >
     ): BeforeToolCallback =
       object : BeforeToolCallback {
-        override suspend fun call(context: ToolContext, tool: BaseTool, args: Map<String, Any>) =
+        override suspend fun call(context: ToolContext, tool: BaseTool, args: Map<String, Any?>) =
           block(context, tool, args)
       }
   }

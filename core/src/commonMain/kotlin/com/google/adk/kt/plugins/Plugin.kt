@@ -189,8 +189,8 @@ interface Plugin : AutoCloseable {
   suspend fun beforeTool(
     context: ToolContext,
     tool: BaseTool,
-    args: Map<String, Any>,
-  ): CallbackChoice<Map<String, Any>, Map<String, Any>> = CallbackChoice.Continue(args)
+    args: Map<String, Any?>,
+  ): CallbackChoice<Map<String, Any?>, Map<String, Any?>> = CallbackChoice.Continue(args)
 
   /**
    * Callback executed after a tool finishes its execution.
@@ -207,7 +207,7 @@ interface Plugin : AutoCloseable {
   suspend fun afterTool(
     context: ToolContext,
     tool: BaseTool,
-    args: Map<String, Any>,
+    args: Map<String, Any?>,
     result: Map<String, Any?>,
   ): Map<String, Any?> = result
 
@@ -228,7 +228,7 @@ interface Plugin : AutoCloseable {
   suspend fun onToolError(
     context: ToolContext,
     tool: BaseTool,
-    args: Map<String, Any>,
+    args: Map<String, Any?>,
     error: Throwable,
   ): CallbackChoice<Unit, Map<String, Any?>> = CallbackChoice.Continue(Unit)
 

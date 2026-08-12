@@ -808,7 +808,7 @@ private class RecordingTool(name: String) : BaseTool(name = name, description = 
 
   override fun declaration(): FunctionDeclaration? = null
 
-  override suspend fun run(context: ToolContext, args: Map<String, Any>): Any =
+  override suspend fun run(context: ToolContext, args: Map<String, Any?>): Any =
     emptyMap<String, Any>()
 
   override fun close() {
@@ -821,7 +821,7 @@ private class ThrowingTool(name: String, private val failure: RuntimeException) 
   BaseTool(name = name, description = "") {
   override fun declaration(): FunctionDeclaration? = null
 
-  override suspend fun run(context: ToolContext, args: Map<String, Any>): Any =
+  override suspend fun run(context: ToolContext, args: Map<String, Any?>): Any =
     emptyMap<String, Any>()
 
   override fun close(): Unit = throw failure

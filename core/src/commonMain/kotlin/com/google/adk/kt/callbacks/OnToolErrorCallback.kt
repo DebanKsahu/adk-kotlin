@@ -38,7 +38,7 @@ interface OnToolErrorCallback : Callback {
   suspend fun call(
     context: ToolContext,
     tool: BaseTool,
-    args: Map<String, Any>,
+    args: Map<String, Any?>,
     error: Throwable,
   ): CallbackChoice<Unit, Map<String, Any?>>
 
@@ -52,14 +52,14 @@ interface OnToolErrorCallback : Callback {
     operator fun invoke(
       block:
         suspend (
-          context: ToolContext, tool: BaseTool, args: Map<String, Any>, error: Throwable,
+          context: ToolContext, tool: BaseTool, args: Map<String, Any?>, error: Throwable,
         ) -> CallbackChoice<Unit, Map<String, Any?>>
     ): OnToolErrorCallback =
       object : OnToolErrorCallback {
         override suspend fun call(
           context: ToolContext,
           tool: BaseTool,
-          args: Map<String, Any>,
+          args: Map<String, Any?>,
           error: Throwable,
         ) = block(context, tool, args, error)
       }

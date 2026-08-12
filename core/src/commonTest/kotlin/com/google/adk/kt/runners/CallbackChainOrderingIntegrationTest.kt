@@ -60,7 +60,7 @@ class CallbackChainOrderingIntegrationTest {
   @Test
   fun runAsync_beforeToolCallbackChain_eachCallbackSeesPriorMutationAndToolSeesFinal() = runTest {
     val invocationOrder = mutableListOf<String>()
-    var argsObservedByTool: Map<String, Any>? = null
+    var argsObservedByTool: Map<String, Any?>? = null
     val agent =
       llmAgentWithFunctionThenText(
         toolName = "t",

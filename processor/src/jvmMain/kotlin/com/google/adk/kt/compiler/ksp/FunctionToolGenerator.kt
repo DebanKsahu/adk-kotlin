@@ -179,7 +179,10 @@ class FunctionToolGenerator(
         .addParameter("context", ToolContext::class.asClassName())
         .addParameter(
           "args",
-          MAP.parameterizedBy(String::class.asClassName(), Any::class.asClassName()),
+          MAP.parameterizedBy(
+            String::class.asClassName(),
+            Any::class.asClassName().copy(nullable = true),
+          ),
         )
         .returns(Any::class.asClassName())
 

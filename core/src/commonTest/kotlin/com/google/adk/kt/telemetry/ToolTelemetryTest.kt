@@ -296,35 +296,35 @@ class ToolTelemetryTest {
   private class TestFunctionTool : FunctionTool("test_tool", "A test tool") {
     override fun declaration() = null
 
-    override suspend fun execute(context: ToolContext, args: Map<String, Any>): Any =
+    override suspend fun execute(context: ToolContext, args: Map<String, Any?>): Any =
       mapOf("output" to "success")
   }
 
   private class NamedFunctionTool(name: String) : FunctionTool(name, "A test tool") {
     override fun declaration() = null
 
-    override suspend fun execute(context: ToolContext, args: Map<String, Any>): Any =
+    override suspend fun execute(context: ToolContext, args: Map<String, Any?>): Any =
       mapOf("output" to "success")
   }
 
   private class ThrowingFunctionTool : FunctionTool("throwing_tool", "A throwing tool") {
     override fun declaration() = null
 
-    override suspend fun execute(context: ToolContext, args: Map<String, Any>): Any =
+    override suspend fun execute(context: ToolContext, args: Map<String, Any?>): Any =
       throw IllegalStateException("boom")
   }
 
   private class ScalarFunctionTool : FunctionTool("scalar_tool", "A scalar tool") {
     override fun declaration() = null
 
-    override suspend fun execute(context: ToolContext, args: Map<String, Any>): Any =
+    override suspend fun execute(context: ToolContext, args: Map<String, Any?>): Any =
       "scalar-result-value"
   }
 
   private class ArgThrowingFunctionTool : FunctionTool("arg_throwing_tool", "A throwing tool") {
     override fun declaration() = null
 
-    override suspend fun execute(context: ToolContext, args: Map<String, Any>): Any =
+    override suspend fun execute(context: ToolContext, args: Map<String, Any?>): Any =
       throw IllegalArgumentException("bad arg")
   }
 
@@ -336,7 +336,7 @@ class ToolTelemetryTest {
     ) {
     override fun declaration() = null
 
-    override suspend fun execute(context: ToolContext, args: Map<String, Any>): Any =
+    override suspend fun execute(context: ToolContext, args: Map<String, Any?>): Any =
       mapOf("output" to "success")
   }
 
@@ -348,7 +348,7 @@ class ToolTelemetryTest {
     ) {
     override fun declaration() = null
 
-    override suspend fun execute(context: ToolContext, args: Map<String, Any>): Any =
+    override suspend fun execute(context: ToolContext, args: Map<String, Any?>): Any =
       mapOf("output" to "success")
   }
 }
