@@ -2,7 +2,6 @@
 # go/keep-sorted start
 
 a2a = "1.0.0.Final"
-a2a-legacy = "0.3.3.Final"
 androidx-activity-compose = "1.9.3"
 androidx-appsearch = "1.1.0"
 androidx-compose-bom = "2024.09.03"
@@ -29,7 +28,6 @@ google-services = "4.4.4"
 google-truth = "1.4.5"
 gradle-test-retry = "1.6.5"
 graphviz = "0.18.1"
-jackson = "2.16.1"
 jspecify = "1.0.0"
 junit = "4.13.2"
 kotlin = "2.3.21"
@@ -54,9 +52,6 @@ snakeyaml = "2.2"
 
 [libraries]
 # go/keep-sorted start
-a2a-legacy-sdk-client = { module = "io.github.a2asdk:a2a-java-sdk-client", version.ref = "a2a-legacy" }
-a2a-legacy-sdk-common = { module = "io.github.a2asdk:a2a-java-sdk-common", version.ref = "a2a-legacy" }
-a2a-legacy-sdk-spec = { module = "io.github.a2asdk:a2a-java-sdk-spec", version.ref = "a2a-legacy" }
 a2a-sdk-client = { module = "org.a2aproject.sdk:a2a-java-sdk-client", version.ref = "a2a" }
 a2a-sdk-common = { module = "org.a2aproject.sdk:a2a-java-sdk-common", version.ref = "a2a" }
 a2a-sdk-spec = { module = "org.a2aproject.sdk:a2a-java-sdk-spec", version.ref = "a2a" }
@@ -99,9 +94,6 @@ google-mlkit-genai-prompt = { module = "com.google.mlkit:genai-prompt", version.
 google-protobuf-javalite = { module = "com.google.protobuf:protobuf-javalite", version.ref = "google-protobuf-javalite" }
 google-truth = { module = "com.google.truth:truth", version.ref = "google-truth" }
 graphviz-java = { module = "guru.nidi:graphviz-java", version.ref = "graphviz" }
-jackson-databind = { module = "com.fasterxml.jackson.core:jackson-databind", version.ref = "jackson" }
-jackson-datatype-jsr310 = { module = "com.fasterxml.jackson.datatype:jackson-datatype-jsr310", version.ref = "jackson" }
-jackson-module-kotlin = { module = "com.fasterxml.jackson.module:jackson-module-kotlin", version.ref = "jackson" }
 jspecify = { module = "org.jspecify:jspecify", version.ref = "jspecify" }
 junit = { module = "junit:junit", version.ref = "junit" }
 kotlin-test-junit = { module = "org.jetbrains.kotlin:kotlin-test-junit", version.ref = "kotlin" }

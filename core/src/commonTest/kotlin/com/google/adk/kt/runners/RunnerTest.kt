@@ -21,7 +21,6 @@ import com.google.adk.kt.callbacks.CallbackChoice
 import com.google.adk.kt.events.Event
 import com.google.adk.kt.models.LlmResponse
 import com.google.adk.kt.plugins.Plugin
-import com.google.adk.kt.plugins.PluginManager
 import com.google.adk.kt.sessions.SessionKey
 import com.google.adk.kt.testing.DummyAgent
 import com.google.adk.kt.testing.DummyModel
@@ -144,28 +143,6 @@ class RunnerTest {
       "The weather is sunny and it is 12:00 PM.",
       event4.content?.parts?.get(0)?.text ?: "",
     )
-  }
-
-  // Uses the deprecated `pluginManager` constructor on purpose: `plugins` builds its own manager,
-  // so it cannot prove a supplied instance reaches the invocation context.
-  @Suppress("DEPRECATION")
-  @Test
-  fun runAsync_withCustomPluginManager_passesToContext() = runTest {
-    var capturedPluginManager: PluginManager? = null
-    val spyAgent =
-      DummyAgent(
-        name = "spy-agent",
-        onRunAsync = { ctx -> capturedPluginManager = ctx.pluginManager },
-      )
-
-    val customPluginManager = PluginManager()
-    val runner = InMemoryRunner(agent = spyAgent, pluginManager = customPluginManager)
-
-    runner
-      .runAsync(userId = "user1", sessionId = "session1", newMessage = Content(Role.USER))
-      .toList()
-
-    assertEquals(customPluginManager, capturedPluginManager)
   }
 
   @Test

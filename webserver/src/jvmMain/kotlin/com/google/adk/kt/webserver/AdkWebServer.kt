@@ -19,7 +19,6 @@ package com.google.adk.kt.webserver
 import com.google.adk.kt.annotations.FrameworkInternalApi
 import com.google.adk.kt.artifacts.ArtifactService
 import com.google.adk.kt.plugins.Plugin
-import com.google.adk.kt.runners.Runner
 import com.google.adk.kt.serialization.adkJson
 import com.google.adk.kt.sessions.SessionService
 import com.google.adk.kt.telemetry.TelemetryConfig
@@ -71,31 +70,6 @@ class AdkWebServer(
   private val captureMessageContent: Boolean = false,
   private val plugins: List<Plugin> = emptyList(),
 ) {
-  @Deprecated(
-    message = "Use constructor without runner",
-    replaceWith =
-      ReplaceWith(
-        "AdkWebServer(port, sessionService, artifactService, agentLoader, apiServerSpanExporter)"
-      ),
-    level = DeprecationLevel.WARNING,
-  )
-  constructor(
-    port: Int = 8080,
-    sessionService: SessionService,
-    artifactService: ArtifactService,
-    runner: Runner,
-    agentLoader: AgentLoader,
-    apiServerSpanExporter: ApiServerSpanExporter,
-    captureMessageContent: Boolean = false,
-  ) : this(
-    port,
-    sessionService,
-    artifactService,
-    agentLoader,
-    apiServerSpanExporter,
-    captureMessageContent,
-  )
-
   companion object {
     private val logger = LoggerFactory.getLogger(AdkWebServer::class.java)
 
@@ -202,27 +176,4 @@ fun Application.adkModule(
     sessionRoutes(sessionService)
     staticRoutes(this@adkModule)
   }
-}
-
-@Deprecated(
-  message = "Use adkModule without runner",
-  replaceWith =
-    ReplaceWith("adkModule(sessionService, artifactService, agentLoader, apiServerSpanExporter)"),
-  level = DeprecationLevel.WARNING,
-)
-fun Application.adkModule(
-  sessionService: SessionService,
-  artifactService: ArtifactService,
-  runner: Runner,
-  agentLoader: AgentLoader,
-  apiServerSpanExporter: ApiServerSpanExporter,
-  captureMessageContent: Boolean = false,
-) {
-  adkModule(
-    sessionService,
-    artifactService,
-    agentLoader,
-    apiServerSpanExporter,
-    captureMessageContent,
-  )
 }

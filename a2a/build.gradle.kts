@@ -50,20 +50,12 @@ kotlin {
           compileOnly(libs.jspecify)
         }
       }
-    // jvmMain hosts the deprecated v0.3 path (JVM-only).
     getByName("jvmMain") {
       dependsOn(commonJvmAndroidMain)
       dependencies {
         // JVM v1.0 factory uses the SDK's proto-based JSON-RPC transport; kept off the Android
         // path.
         implementation(libs.a2a.sdk.transport.jsonrpc)
-        // Jackson is JVM-only (deprecated v0.3 converters); kept off the Android artifact.
-        implementation(libs.jackson.databind)
-        implementation(libs.jackson.datatype.jsr310)
-        implementation(libs.jackson.module.kotlin)
-        implementation(libs.a2a.legacy.sdk.client)
-        implementation(libs.a2a.legacy.sdk.common)
-        implementation(libs.a2a.legacy.sdk.spec)
       }
     }
     getByName("jvmTest") {
@@ -74,8 +66,6 @@ kotlin {
         implementation(libs.kotlinx.coroutines.test)
         implementation(libs.okhttp)
         implementation(libs.okhttp.mockwebserver)
-        implementation(libs.a2a.legacy.sdk.client)
-        implementation(libs.a2a.legacy.sdk.spec)
       }
     }
   }

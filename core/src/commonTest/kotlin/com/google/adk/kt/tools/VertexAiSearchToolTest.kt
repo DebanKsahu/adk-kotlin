@@ -150,19 +150,4 @@ class VertexAiSearchToolTest {
     assertEquals(1, tools.size)
     assertNotNull(tools[0].retrieval?.vertexAiSearch)
   }
-
-  @Suppress("DEPRECATION")
-  @Test
-  fun processLlmRequest_deprecatedModelParamSet_isIgnored() = runTest {
-    val tool = VertexAiSearchTool(dataStoreId = "ds1", model = "gpt-4")
-    val context = testToolContext()
-    val request = LlmRequest(model = DummyModel("gemini-2.0-flash"))
-
-    val updatedRequest = tool.processLlmRequest(context, request)
-
-    val tools = updatedRequest.config.tools
-    assertNotNull(tools)
-    assertEquals(1, tools.size)
-    assertNotNull(tools[0].retrieval?.vertexAiSearch)
-  }
 }

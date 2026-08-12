@@ -99,12 +99,6 @@ interface Runner : AutoCloseable {
    *
    * Being [AutoCloseable] lets callers manage a runner's lifecycle idiomatically, e.g. with
    * Kotlin's `use {}`. See [AbstractRunner.close] for the standard behavior.
-   *
-   * **Implementations must override this.** The no-op body exists only so that adding
-   * [AutoCloseable] to this interface did not break existing implementations; it will be removed,
-   * at which point `close()` becomes abstract and every implementation must supply its own. Relying
-   * on the default silently skips resource cleanup, so implementations that genuinely hold nothing
-   * closeable should still override it with an explicit no-op.
    */
-  override fun close() {}
+  override fun close()
 }

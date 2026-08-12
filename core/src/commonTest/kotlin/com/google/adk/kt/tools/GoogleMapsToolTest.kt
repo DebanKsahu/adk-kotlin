@@ -147,19 +147,4 @@ class GoogleMapsToolTest {
     assertEquals(2, tools.size)
     assertNotNull(tools.find { it.googleMaps != null })
   }
-
-  @Suppress("DEPRECATION")
-  @Test
-  fun processLlmRequest_deprecatedModelParamSet_isIgnored() = runTest {
-    val tool = GoogleMapsTool(model = "gpt-4")
-    val context = testToolContext()
-    var request = LlmRequest(model = DummyModel("gemini-2.0-flash"))
-
-    request = tool.processLlmRequest(context, request)
-
-    val tools = request.config.tools
-    assertNotNull(tools)
-    assertEquals(1, tools.size)
-    assertNotNull(tools[0].googleMaps)
-  }
 }

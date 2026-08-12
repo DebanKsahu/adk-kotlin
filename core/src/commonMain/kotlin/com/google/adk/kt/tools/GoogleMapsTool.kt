@@ -28,13 +28,7 @@ import com.google.adk.kt.types.Tool
  * This tool operates internally within the model and does not require or perform local code
  * execution.
  */
-class GoogleMapsTool(
-  @Deprecated(
-    "Model-based tool gating has been removed; tool support is verified by the backend. " +
-      "This parameter is unused and will be removed in a future release."
-  )
-  val model: String? = null
-) : BaseTool(name = "google_maps", description = "google_maps") {
+class GoogleMapsTool : BaseTool(name = "google_maps", description = "google_maps") {
 
   override fun declaration(): FunctionDeclaration? = null
 

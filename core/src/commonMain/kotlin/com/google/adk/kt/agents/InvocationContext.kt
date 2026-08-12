@@ -156,23 +156,6 @@ data class InvocationContext(
    */
   @Volatile var isEndOfInvocation: Boolean = false,
 
-  /**
-   * Whether this invocation is paused.
-   *
-   * @deprecated This flag is no longer set or read by the framework. Pause detection on a resumable
-   *   invocation is now computed per-event via [shouldPauseInvocation]; long-running tool pauses
-   *   are signalled via `Event.isFinalResponse` on the function-call event (which carries
-   *   `Event.longRunningToolIds`). Scheduled for removal in a future release.
-   */
-  @Deprecated(
-    message =
-      "isPaused is no longer set or read by the framework. Use shouldPauseInvocation or " +
-        "Event.isFinalResponse / Event.longRunningToolIds to detect long-running pauses.",
-    level = DeprecationLevel.WARNING,
-  )
-  @Volatile
-  var isPaused: Boolean = false,
-
   /** The manager for keeping track of plugins in this invocation. */
   val pluginManager: PluginManager = PluginManager(),
 
